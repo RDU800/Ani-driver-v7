@@ -140,6 +140,7 @@ has_opt "$MESA_OPT_FILE" install-precomp-compiler && HOST_OPTS+=(-Dinstall-preco
 if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
   LLVM_VER="${LLVM_VER:-20}"
   LLVM_CONFIG_BIN="/usr/bin/llvm-config-${LLVM_VER}"
+  CLANG_BIN="/usr/bin/clang-${LLVM_VER}"
   if [[ ! -x "$LLVM_CONFIG_BIN" ]]; then
     echo "Error: $LLVM_CONFIG_BIN not found. Install llvm-${LLVM_VER}-dev libclang-${LLVM_VER}-dev libclc-${LLVM_VER}-dev libllvmspirvlib-${LLVM_VER}-dev." >&2
     exit 1
