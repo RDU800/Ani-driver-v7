@@ -129,10 +129,19 @@ ninja -C "$LIBDRM_BUILD_DIR" install
 # ---------------------------------------------------------------------------
 MESA_OPT_FILE="$(find_opt_file "$SRC_DIR")"
 
-if ! command -v llvm-config >/dev/null 2>&1 && ! compgen -G "/usr/bin/llvm-config*" >/dev/null; then
-  echo "Error: llvm-config not found. Install llvm-dev libclang-dev libclc-dev libllvmspirvlib-dev." >&2
+LLVM_VER="${LLVM_VER:-20}"
+LLVM_CONFIG_BIN="/usr/bin/llvm-config-${LLVM_VER}"
+if [[ ! -x "$LLVM_CONFIG_BIN" ]]; then
+  echo "Error: $LLVM_CONFIG_BIN not found. Install llvm-${LLVM_VER}-dev libclang-${LLVM_VER}-dev libclc-${LLVM_VER}-dev libllvmspirvlib-${LLVM_VER}-dev." >&2
   exit 1
 fi
+
+# Point meson at the versioned LLVM for the native build
+NATIVE_FILE="$ROOT_DIR/build/native-llvm.txt"
+cat > "$NATIVE_FILE" <<EOF
+[binaries]
+llvm-config = '$LLVM_CONFIG_BIN'
+EOF
 
 HOST_OPTS=()
 has_opt "$MESA_OPT_FILE" mesa-clc            && HOST_OPTS+=(-Dmesa-clc=enabled)
@@ -144,6 +153,7 @@ if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
   echo "Building native host tools with: ${HOST_OPTS[*]}"
   rm -rf "$HOST_BUILD_DIR" "$HOST_PREFIX"
   meson setup "$HOST_BUILD_DIR" "$SRC_DIR" \
+    --native-file="$NATIVE_FILE" \
     --prefix="$HOST_PREFIX" \
     -Dbuildtype=release \
     -Dllvm=enabled \
