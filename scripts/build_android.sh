@@ -51,18 +51,7 @@ meson setup "$DRM_BUILD" "$DRM_SRC" \
   -Dvalgrind=disabled \
   -Dcairo-tests=disabled \
   -Dman-pages=disabled \
-  -Dtests=false \
-  -Dfreedreno=disabled \
-  -Detnaviv=disabled \
-  -Dexynos=disabled \
-  -Domap=disabled \
-  -Dtegra=disabled \
-  -Dvc4=disabled \
-  -Dvmwgfx=disabled \
-  -Dradeon=false \
-  -Damdgpu=false \
-  -Dnouveau=false \
-  -Dintel=false
+  -Dtests=false
 ninja -C "$DRM_BUILD"
 ninja -C "$DRM_BUILD" install
 
