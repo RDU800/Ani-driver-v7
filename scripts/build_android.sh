@@ -166,7 +166,7 @@ EOF
     -Dgles2=disabled \
     -Dopengl=false \
     -Dgallium-drivers= \
-    -Dvulkan-drivers="${NATIVE_VK_DRIVERS:-}" \
+    -Dvulkan-drivers="${NATIVE_VK_DRIVERS:-panfrost}" \
     "${HOST_OPTS[@]}"
   ninja -C "$HOST_BUILD_DIR" -j"$(nproc)"
   ninja -C "$HOST_BUILD_DIR" install
