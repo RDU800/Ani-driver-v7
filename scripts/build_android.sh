@@ -2,13 +2,18 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_DIR="${SRC_DIR:-$ROOT_DIR/build/mesa}"
+SRC_DIR="${1:-${SRC_DIR:-$ROOT_DIR/build/mesa}}"
+OUT_DIR="${2:-${OUT_DIR:-$ROOT_DIR/build/out}}"
+
 PATCH_DIR="${PATCH_DIR:-$ROOT_DIR/patches}"
-BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/android-arm64}"
-OUT_DIR="${OUT_DIR:-$ROOT_DIR/out/android-arm64}"
+LIBDRM_SRC_DIR="${LIBDRM_SRC_DIR:-$ROOT_DIR/build/libdrm}"
+LIBDRM_BUILD_DIR="${LIBDRM_BUILD_DIR:-$ROOT_DIR/build/libdrm-android-arm64}"
+LIBDRM_PREFIX="${LIBDRM_PREFIX:-$ROOT_DIR/build/deps-android-arm64}"
+
+MESA_BUILD_DIR="${MESA_BUILD_DIR:-$ROOT_DIR/build/android-arm64}"
 CROSS_FILE="${CROSS_FILE:-$ROOT_DIR/cross-android-arm64.txt}"
 
-NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-/opt/android-ndk-r28c}}"
+NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-/opt/ndk/android-ndk-r28c}}}"
 API_LEVEL="${API_LEVEL:-29}"
 
 if [[ ! -d "$SRC_DIR" ]]; then
@@ -39,7 +44,7 @@ c = '$TOOLCHAIN_BIN/${TARGET_TRIPLE}-clang'
 cpp = '$TOOLCHAIN_BIN/${TARGET_TRIPLE}-clang++'
 ar = '$TOOLCHAIN_BIN/llvm-ar'
 strip = '$TOOLCHAIN_BIN/llvm-strip'
-pkgconfig = 'pkg-config'
+pkg-config = 'pkg-config'
 
 [properties]
 needs_exe_wrapper = true
@@ -52,9 +57,37 @@ endian = 'little'
 EOF
 fi
 
-# 3. Configure with Meson
-rm -rf "$BUILD_DIR"
-meson setup "$BUILD_DIR" "$SRC_DIR" \
+# 3. Build libdrm for Android aarch64
+if [[ ! -d "$LIBDRM_SRC_DIR" ]]; then
+  git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git "$LIBDRM_SRC_DIR"
+fi
+
+rm -rf "$LIBDRM_BUILD_DIR" "$LIBDRM_PREFIX"
+meson setup "$LIBDRM_BUILD_DIR" "$LIBDRM_SRC_DIR" \
+  --cross-file="$CROSS_FILE" \
+  --prefix="$LIBDRM_PREFIX" \
+  -Dudev=false \
+  -Dvalgrind=disabled \
+  -Dfreedreno=disabled \
+  -Detnaviv=disabled \
+  -Dexynos=disabled \
+  -Domap=disabled \
+  -Dtegra=disabled \
+  -Dvc4=disabled \
+  -Dvmwgfx=disabled \
+  -Dradeon=false \
+  -Damdgpu=false \
+  -Dnouveau=false \
+  -Dintel=false
+
+ninja -C "$LIBDRM_BUILD_DIR" -j"$(nproc)"
+ninja -C "$LIBDRM_BUILD_DIR" install
+
+export PKG_CONFIG_PATH="$LIBDRM_PREFIX/lib/pkgconfig${LIBDRM_PREFIX}/lib/aarch64-linux-gnu/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+# 4. Configure and build Mesa PanVK
+rm -rf "$MESA_BUILD_DIR"
+meson setup "$MESA_BUILD_DIR" "$SRC_DIR" \
   --cross-file="$CROSS_FILE" \
   --prefix=/system \
   -Dbuildtype=release \
@@ -69,8 +102,7 @@ meson setup "$BUILD_DIR" "$SRC_DIR" \
   -Dgbm=disabled \
   -Dvulkan-icd-dir=lib/vulkan/icd.d
 
-# 4. Build and install into staging output directory
-ninja -C "$BUILD_DIR" -j"$(nproc)"
-DESTDIR="$OUT_DIR" ninja -C "$BUILD_DIR" install
+ninja -C "$MESA_BUILD_DIR" -j"$(nproc)"
+DESTDIR="$OUT_DIR" ninja -C "$MESA_BUILD_DIR" install
 
 echo "Build complete. Staged output at: $OUT_DIR"
