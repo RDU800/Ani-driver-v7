@@ -14,7 +14,10 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build python3-mako python3-yaml glslang-tools zip unzip curl
+          sudo apt-get install -y ninja-build python3-pip python3-mako python3-yaml glslang-tools zip unzip curl
+          sudo apt-get remove -y meson || true
+          python3 -m pip install --break-system-packages --upgrade "meson>=1.7.0" packaging mako
+          meson --version
 
       - name: Install Android NDK r28c
         run: |
