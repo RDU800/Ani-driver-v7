@@ -195,7 +195,12 @@ EXPAT_FALLBACK_OPT=()
 if [[ -f "$SRC_DIR/subprojects/expat.wrap" ]]; then
   EXPAT_FALLBACK_OPT+=(--force-fallback-for=expat)
 fi
+NDK_SYSROOT="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+NDK_CLANG="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang"
+NDK_RES_DIR="$("$NDK_CLANG" -print-resource-dir)"
 
+# Override host flags from Step 4 so bindgen uses Android Bionic headers
+export BINDGEN_EXTRA_CLANG_ARGS="--sysroot=${NDK_SYSROOT} -resource-dir=${NDK_RES_DIR}"
 rm -rf "$MESA_BUILD_DIR"
 meson setup "$MESA_BUILD_DIR" "$SRC_DIR" \
   --cross-file="$CROSS_FILE" \
