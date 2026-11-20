@@ -1,111 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MESA_DIR="$(realpath -m "${1:-build/mesa}")"
-OUT_DIR="$(realpath -m "${2:-build/out}")"
-NDK_DIR="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-/opt/ndk/android-ndk-r28c}}"
-API_LEVEL="${ANDROID_PLATFORM_API:-29}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SRC_DIR="${SRC_DIR:-$ROOT_DIR/build/mesa}"
+PATCH_DIR="${PATCH_DIR:-$ROOT_DIR/patches}"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/android-arm64}"
+OUT_DIR="${OUT_DIR:-$ROOT_DIR/out/android-arm64}"
+CROSS_FILE="${CROSS_FILE:-$ROOT_DIR/cross-android-arm64.txt}"
 
-TOOLCHAIN_BIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
-CLANG="$TOOLCHAIN_BIN/aarch64-linux-android${API_LEVEL}-clang"
-CLANGXX="$TOOLCHAIN_BIN/aarch64-linux-android${API_LEVEL}-clang++"
-AR="$TOOLCHAIN_BIN/llvm-ar"
-LD="$TOOLCHAIN_BIN/ld.lld"
-STRIP="$TOOLCHAIN_BIN/llvm-strip"
+NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-/opt/android-ndk-r28c}}"
+API_LEVEL="${API_LEVEL:-29}"
 
-if [ ! -x "$CLANG" ]; then
-  echo "ERROR: Android NDK clang not found at: $CLANG" >&2
+if [[ ! -d "$SRC_DIR" ]]; then
+  echo "Error: Mesa source directory not found at $SRC_DIR" >&2
   exit 1
 fi
 
-# Ensure Rust + Android aarch64 target are installed in the runner environment
-if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
-  echo ">>> Installing rustup and Rust toolchain..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+# 1. Apply patches if present
+if [[ -d "$PATCH_DIR" ]] && compgen -G "$PATCH_DIR/*.patch" > /dev/null; then
+  echo "Applying patches from $PATCH_DIR..."
+  git -C "$SRC_DIR" am --abort 2>/dev/null || true
+  for p in "$PATCH_DIR"/*.patch; do
+    echo "  -> $(basename "$p")"
+    git -C "$SRC_DIR" am "$p"
+  done
+else
+  echo "No patches directory or *.patch files found at $PATCH_DIR; skipping patch step."
 fi
 
-export PATH="$HOME/.cargo/bin:$PATH"
-rustup target add aarch64-linux-android
+# 2. Generate Meson cross-file if not already provided
+if [[ ! -f "$CROSS_FILE" ]]; then
+  TOOLCHAIN_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+  TARGET_TRIPLE="aarch64-linux-android${API_LEVEL}"
 
-# Ensure bindgen and host libclang are available for Mesa's Rust bindings
-if ! command -v bindgen >/dev/null 2>&1; then
-  echo ">>> Installing libclang-dev and bindgen-cli..."
-  sudo apt-get update
-  sudo apt-get install -y libclang-dev
-  cargo install bindgen-cli --locked
-fi
-
-RUSTC_BIN="$(command -v rustc)"
-RUST_TARGET="aarch64-linux-android"
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
-export RUSTC_LD="$CLANG"
-
-mkdir -p "$OUT_DIR"
-
-DRM_SRC="$OUT_DIR/libdrm-src"
-DRM_BUILD="$OUT_DIR/libdrm-build"
-DRM_PREFIX="$OUT_DIR/libdrm-prefix"
-rm -rf "$DRM_SRC" "$DRM_BUILD" "$DRM_PREFIX"
-
-CROSS_FILE="$OUT_DIR/android-aarch64.txt"
-cat <<EOF > "$CROSS_FILE"
+  cat > "$CROSS_FILE" <<EOF
 [binaries]
-c = '$CLANG'
-cpp = '$CLANGXX'
-ar = '$AR'
-ld = '$LD'
-strip = '$STRIP'
-rust = ['$RUSTC_BIN', '--target', '$RUST_TARGET']
-pkg-config = 'pkg-config'
+c = '$TOOLCHAIN_BIN/${TARGET_TRIPLE}-clang'
+cpp = '$TOOLCHAIN_BIN/${TARGET_TRIPLE}-clang++'
+ar = '$TOOLCHAIN_BIN/llvm-ar'
+strip = '$TOOLCHAIN_BIN/llvm-strip'
+pkgconfig = 'pkg-config'
+
+[properties]
+needs_exe_wrapper = true
 
 [host_machine]
 system = 'android'
 cpu_family = 'aarch64'
-cpu = 'armv8.2-a'
+cpu = 'armv8-a'
 endian = 'little'
 EOF
+fi
 
-# Build libdrm for Android aarch64 into absolute $DRM_PREFIX so Meson finds libdrm.pc cleanly
-git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git "$DRM_SRC"
-meson setup "$DRM_BUILD" "$DRM_SRC" \
-  --cross-file="$CROSS_FILE" \
-  --prefix="$DRM_PREFIX" \
-  -Dbuildtype=release \
-  -Dvalgrind=disabled \
-  -Dcairo-tests=disabled \
-  -Dman-pages=disabled \
-  -Dtests=false
-ninja -C "$DRM_BUILD"
-ninja -C "$DRM_BUILD" install
-
-DRM_PC_DIRS="$(find "$DRM_PREFIX" -name 'libdrm.pc' -exec dirname {} \; | paste -sd: -)"
-export PKG_CONFIG_LIBDIR="${DRM_PC_DIRS}"
-export PKG_CONFIG_PATH="${DRM_PC_DIRS}"
-
-BUILD_DIR="$OUT_DIR/meson-build"
+# 3. Configure with Meson
 rm -rf "$BUILD_DIR"
-
-meson setup "$BUILD_DIR" "$MESA_DIR" \
+meson setup "$BUILD_DIR" "$SRC_DIR" \
   --cross-file="$CROSS_FILE" \
+  --prefix=/system \
   -Dbuildtype=release \
   -Dplatforms=android \
   -Dplatform-sdk-version="$API_LEVEL" \
   -Dandroid-stub=true \
   -Dvulkan-drivers=panfrost \
   -Dgallium-drivers= \
+  -Dllvm=disabled \
   -Dglx=disabled \
   -Degl=disabled \
   -Dgbm=disabled \
   -Dvulkan-icd-dir=lib/vulkan/icd.d
 
-ninja -C "$BUILD_DIR"
+# 4. Build and install into staging output directory
+ninja -C "$BUILD_DIR" -j"$(nproc)"
+DESTDIR="$OUT_DIR" ninja -C "$BUILD_DIR" install
 
-SO_PATH="$(find "$BUILD_DIR" -name 'libvulkan_panfrost.so' -print -quit || true)"
-if [ -z "$SO_PATH" ]; then
-  echo "ERROR: libvulkan_panfrost.so was not produced in $BUILD_DIR" >&2
-  exit 1
-fi
-
-cp -f "$SO_PATH" "$OUT_DIR/libvulkan_panfrost.so"
-"$STRIP" --strip-unneeded "$OUT_DIR/libvulkan_panfrost.so" || true
-echo ">>> Built PanVK driver: $OUT_DIR/libvulkan_panfrost.so"
+echo "Build complete. Staged output at: $OUT_DIR"
