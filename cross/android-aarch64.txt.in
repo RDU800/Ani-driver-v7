@@ -4,7 +4,7 @@ cpp = '@NDK_TOOLCHAIN@/bin/aarch64-linux-android@API@-clang++'
 ar = '@NDK_TOOLCHAIN@/bin/llvm-ar'
 strip = '@NDK_TOOLCHAIN@/bin/llvm-strip'
 pkg-config = 'false'
-rust = ['rustc', '--target', 'aarch64-linux-android']
+rust = ['rustc']
 rust_ld = '@NDK_TOOLCHAIN@/bin/aarch64-linux-android@API@-clang'
 
 [host_machine]
@@ -12,3 +12,6 @@ system = 'android'
 cpu_family = 'aarch64'
 cpu = 'armv8.2-a'
 endian = 'little'
+
+[built-in options]
+rust_args = ['--target', 'aarch64-linux-android']
