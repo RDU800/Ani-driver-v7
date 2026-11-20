@@ -32,6 +32,12 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           rustc --version
 
+      - name: Install bindgen-cli
+        run: |
+         export LIBCLANG_PATH="$(llvm-config-20 --libdir)"
+         cargo install --locked bindgen-cli
+         bindgen --version
+    
       - name: Install Android NDK r28c
         run: |
           if [ -f sources.lock ]; then
