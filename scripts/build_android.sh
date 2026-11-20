@@ -27,8 +27,18 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 rustup target add aarch64-linux-android
 
+# Ensure bindgen and host libclang are available for Mesa's Rust bindings
+if ! command -v bindgen >/dev/null 2>&1; then
+  echo ">>> Installing libclang-dev and bindgen-cli..."
+  sudo apt-get update
+  sudo apt-get install -y libclang-dev
+  cargo install bindgen-cli --locked
+fi
+
 RUSTC_BIN="$(command -v rustc)"
 RUST_TARGET="aarch64-linux-android"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
+export RUSTC_LD="$CLANG"
 
 mkdir -p "$OUT_DIR"
 
@@ -45,7 +55,7 @@ cpp = '$CLANGXX'
 ar = '$AR'
 ld = '$LD'
 strip = '$STRIP'
-rust = ['$RUSTC_BIN', '--target', '$RUST_TARGET', '-C', 'linker=$CLANG']
+rust = ['$RUSTC_BIN', '--target', '$RUST_TARGET']
 pkg-config = 'pkg-config'
 
 [host_machine]
