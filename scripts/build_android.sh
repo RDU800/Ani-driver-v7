@@ -144,6 +144,12 @@ if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
     echo "Error: $LLVM_CONFIG_BIN not found. Install llvm-${LLVM_VER}-dev libclang-${LLVM_VER}-dev libclc-${LLVM_VER}-dev libllvmspirvlib-${LLVM_VER}-dev." >&2
     exit 1
   fi
+  
+  export LIBCLANG_PATH="${LIBCLANG_PATH:-$("$LLVM_CONFIG_BIN" --libdir)}"
+  if [[ -x "$CLANG_BIN" ]]; then
+    CLANG_RES_DIR="$("$CLANG_BIN" -print-resource-dir)"
+    export BINDGEN_EXTRA_CLANG_ARGS="${BINDGEN_EXTRA_CLANG_ARGS:-} -resource-dir=${CLANG_RES_DIR}"
+  fi
 
   NATIVE_FILE="$ROOT_DIR/build/native-llvm.txt"
   cat > "$NATIVE_FILE" <<EOF
