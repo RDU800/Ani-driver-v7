@@ -45,9 +45,10 @@ has_opt() { # has_opt <options-file> <name>
 disable_opt() { # disable_opt <options-file> <name>
   local file="$1" name="$2" type
   has_opt "$file" "$name" || return 0
-  type="$(awk -v n="'${name}'" 'index($0,n){f=1} f && /type/ {print; exit}' "$file")"
+  type="$(awk -v n="'${name}'" '$0 ~ n {f=1} f && /type[[:space:]]*:/ {print; exit}' "$file")"
   if [[ "$type" == *feature* ]]; then echo "-D${name}=disabled"; else echo "-D${name}=false"; fi
 }
+
 
 # ---------------------------------------------------------------------------
 # 1. Apply flat patches only if not already applied by apply_patches.sh
