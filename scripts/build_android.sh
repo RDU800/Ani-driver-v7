@@ -50,17 +50,17 @@ disable_opt() { # disable_opt <options-file> <name>
 }
 
 # ---------------------------------------------------------------------------
-# 1. Apply patches if present
+# 1. Apply flat patches only if not already applied by apply_patches.sh
 # ---------------------------------------------------------------------------
-if [[ -d "$PATCH_DIR" ]] && compgen -G "$PATCH_DIR/*.patch" > /dev/null; then
+if [[ "${SKIP_PATCH_IN_BUILD:-1}" != "1" ]] && [[ -d "$PATCH_DIR" ]] && compgen -G "$PATCH_DIR/*.patch" > /dev/null; then
   echo "Applying patches from $PATCH_DIR..."
   git -C "$SRC_DIR" am --abort 2>/dev/null || true
   for p in "$PATCH_DIR"/*.patch; do
     echo "  -> $(basename "$p")"
-    git -C "$SRC_DIR" am "$p"
+    git -C "$SRC_DIR" am --3way "$p"
   done
 else
-  echo "No patches directory or *.patch files found at $PATCH_DIR; skipping patch step."
+  echo "Skipping patch step in build_android.sh (handled by apply_patches.sh or no *.patch files)."
 fi
 
 # ---------------------------------------------------------------------------
@@ -129,27 +129,26 @@ ninja -C "$LIBDRM_BUILD_DIR" install
 # ---------------------------------------------------------------------------
 MESA_OPT_FILE="$(find_opt_file "$SRC_DIR")"
 
-LLVM_VER="${LLVM_VER:-20}"
-LLVM_CONFIG_BIN="/usr/bin/llvm-config-${LLVM_VER}"
-if [[ ! -x "$LLVM_CONFIG_BIN" ]]; then
-  echo "Error: $LLVM_CONFIG_BIN not found. Install llvm-${LLVM_VER}-dev libclang-${LLVM_VER}-dev libclc-${LLVM_VER}-dev libllvmspirvlib-${LLVM_VER}-dev." >&2
-  exit 1
-fi
+HOST_OPTS=()
+has_opt "$MESA_OPT_FILE" mesa-clc               && HOST_OPTS+=(-Dmesa-clc=enabled)
+has_opt "$MESA_OPT_FILE" install-mesa-clc       && HOST_OPTS+=(-Dinstall-mesa-clc=true)
+has_opt "$MESA_OPT_FILE" precomp-compiler       && HOST_OPTS+=(-Dprecomp-compiler=enabled)
+has_opt "$MESA_OPT_FILE" install-precomp-compiler && HOST_OPTS+=(-Dinstall-precomp-compiler=true)
 
-# Point meson at the versioned LLVM for the native build
-NATIVE_FILE="$ROOT_DIR/build/native-llvm.txt"
-cat > "$NATIVE_FILE" <<EOF
+if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
+  LLVM_VER="${LLVM_VER:-20}"
+  LLVM_CONFIG_BIN="/usr/bin/llvm-config-${LLVM_VER}"
+  if [[ ! -x "$LLVM_CONFIG_BIN" ]]; then
+    echo "Error: $LLVM_CONFIG_BIN not found. Install llvm-${LLVM_VER}-dev libclang-${LLVM_VER}-dev libclc-${LLVM_VER}-dev libllvmspirvlib-${LLVM_VER}-dev." >&2
+    exit 1
+  fi
+
+  NATIVE_FILE="$ROOT_DIR/build/native-llvm.txt"
+  cat > "$NATIVE_FILE" <<EOF
 [binaries]
 llvm-config = '$LLVM_CONFIG_BIN'
 EOF
 
-HOST_OPTS=()
-has_opt "$MESA_OPT_FILE" mesa-clc            && HOST_OPTS+=(-Dmesa-clc=enabled)
-has_opt "$MESA_OPT_FILE" install-mesa-clc    && HOST_OPTS+=(-Dinstall-mesa-clc=true)
-has_opt "$MESA_OPT_FILE" precomp-compiler    && HOST_OPTS+=(-Dprecomp-compiler=enabled)
-has_opt "$MESA_OPT_FILE" install-precomp-compiler && HOST_OPTS+=(-Dinstall-precomp-compiler=true)
-
-if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
   echo "Building native host tools with: ${HOST_OPTS[*]}"
   rm -rf "$HOST_BUILD_DIR" "$HOST_PREFIX"
   meson setup "$HOST_BUILD_DIR" "$SRC_DIR" \
@@ -183,11 +182,16 @@ EXTRA_OPTS=()
 has_opt "$MESA_OPT_FILE" android-libbacktrace && EXTRA_OPTS+=(-Dandroid-libbacktrace=disabled)
 has_opt "$MESA_OPT_FILE" build-tests          && EXTRA_OPTS+=(-Dbuild-tests=false)
 
+EXPAT_FALLBACK_OPT=()
+if [[ -f "$SRC_DIR/subprojects/expat.wrap" ]]; then
+  EXPAT_FALLBACK_OPT+=(--force-fallback-for=expat)
+fi
+
 rm -rf "$MESA_BUILD_DIR"
 meson setup "$MESA_BUILD_DIR" "$SRC_DIR" \
   --cross-file="$CROSS_FILE" \
   --cross-file="$PKG_CROSS_FILE" \
-  --force-fallback-for=expat \
+  "${EXPAT_FALLBACK_OPT[@]}" \
   --prefix=/system \
   -Dbuildtype=release \
   -Dplatforms=android \
