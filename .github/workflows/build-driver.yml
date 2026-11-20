@@ -17,13 +17,14 @@ jobs:
           sudo apt-get install -y \
             pkg-config ninja-build python3-pip python3-mako python3-yaml python3-ply \
             glslang-tools zip unzip curl git bison flex \
-            llvm-dev libclang-dev libclang-cpp-dev libclc-dev libllvmspirvlib-dev \
+            llvm-20-dev clang-20 libclang-20-dev libclang-cpp20-dev \
+            libclc-20-dev libllvmspirvlib-20-dev spirv-tools spirv-headers \
             libexpat1-dev zlib1g-dev libelf-dev
           sudo apt-get remove -y meson || true
           python3 -m pip install --break-system-packages --upgrade "meson>=1.7.0" packaging mako
           meson --version
           pkg-config --version
-          ls /usr/bin/llvm-config* || true
+          llvm-config-20 --version
 
       - name: Install Android NDK r28c
         run: |
