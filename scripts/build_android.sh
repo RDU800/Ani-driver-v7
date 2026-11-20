@@ -18,6 +18,18 @@ if [ ! -x "$CLANG" ]; then
   exit 1
 fi
 
+# Ensure Rust + Android aarch64 target are installed in the runner environment
+if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
+  echo ">>> Installing rustup and Rust toolchain..."
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+fi
+
+export PATH="$HOME/.cargo/bin:$PATH"
+rustup target add aarch64-linux-android
+
+RUSTC_BIN="$(command -v rustc)"
+RUST_TARGET="aarch64-linux-android"
+
 mkdir -p "$OUT_DIR"
 
 DRM_SRC="$OUT_DIR/libdrm-src"
@@ -33,6 +45,7 @@ cpp = '$CLANGXX'
 ar = '$AR'
 ld = '$LD'
 strip = '$STRIP'
+rust = ['$RUSTC_BIN', '--target', '$RUST_TARGET', '-C', 'linker=$CLANG']
 pkg-config = 'pkg-config'
 
 [host_machine]
