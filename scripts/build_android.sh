@@ -28,7 +28,7 @@ cpp = '$CLANGXX'
 ar = '$AR'
 ld = '$LD'
 strip = '$STRIP'
-pkgconfig = '/usr/bin/false'
+pkg-config = '/usr/bin/false'
 
 [host_machine]
 system = 'android'
@@ -61,8 +61,7 @@ meson setup "$BUILD_DIR" "$MESA_DIR" \
   -Dglx=disabled \
   -Degl=disabled \
   -Dgbm=disabled \
-  -Dvulkan-icd-dir=lib/vulkan/icd.d \
-  -Dlibdrm=enabled
+  -Dvulkan-icd-dir=lib/vulkan/icd.d
 
 ninja -C "$BUILD_DIR"
 
