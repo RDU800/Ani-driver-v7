@@ -77,6 +77,7 @@ cpp = '$TOOLCHAIN_BIN/${TARGET_TRIPLE}-clang++'
 ar = '$TOOLCHAIN_BIN/llvm-ar'
 strip = '$TOOLCHAIN_BIN/llvm-strip'
 pkg-config = 'pkg-config'
+rust = 'rustc'
 
 [properties]
 needs_exe_wrapper = true
