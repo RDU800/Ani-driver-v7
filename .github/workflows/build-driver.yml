@@ -25,7 +25,12 @@ jobs:
           meson --version
           pkg-config --version
           llvm-config-20 --version
-          
+
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-linux-android
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rustc --version
 
       - name: Install Android NDK r28c
         run: |
