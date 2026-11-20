@@ -2,7 +2,12 @@
 set -euo pipefail
 
 MESA_DIR="${1:?Usage: apply_patches.sh <mesa_dir>}"
-PATCH_ROOT="$(cd "$(dirname "$0")/../patches" && pwd)"
+PATCH_ROOT="$(cd "$(dirname "$0")/.." && pwd)/patches"
+
+if [ ! -d "$PATCH_ROOT" ]; then
+  echo ">>> No patches directory at $PATCH_ROOT; skipping patch step"
+  exit 0
+fi
 
 cd "$MESA_DIR"
 git config user.name "ani-panvk-ci"
