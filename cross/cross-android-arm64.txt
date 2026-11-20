@@ -1,0 +1,17 @@
+[binaries]
+c = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang'
+cpp = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++'
+ar = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
+as = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang'
+ld = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld'
+strip = '/opt/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+rust = ['rustc', '--target', 'aarch64-linux-android']
+
+[properties]
+needs_exe_wrapper = true
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'armv8-a'
+endian = 'little'
