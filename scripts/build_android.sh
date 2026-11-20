@@ -3,53 +3,75 @@ set -euo pipefail
 
 MESA_DIR="${1:-build/mesa}"
 OUT_DIR="${2:-build/out}"
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+NDK_DIR="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-/opt/ndk/android-ndk-r28c}}"
+API_LEVEL="${ANDROID_PLATFORM_API:-29}"
 
-# shellcheck disable=SC1090
-source "$ROOT_DIR/sources.lock"
+TOOLCHAIN_BIN="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin"
+CLANG="$TOOLCHAIN_BIN/aarch64-linux-android${API_LEVEL}-clang"
+CLANGXX="$TOOLCHAIN_BIN/aarch64-linux-android${API_LEVEL}-clang++"
+AR="$TOOLCHAIN_BIN/llvm-ar"
+LD="$TOOLCHAIN_BIN/ld.lld"
+STRIP="$TOOLCHAIN_BIN/llvm-strip"
 
-NDK_ROOT="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
-if [ -z "$NDK_ROOT" ] || [ ! -d "$NDK_ROOT" ]; then
-  echo "Error: ANDROID_NDK_HOME or ANDROID_NDK_ROOT must point to a valid Android NDK directory." >&2
+if [ ! -x "$CLANG" ]; then
+  echo "ERROR: Android NDK clang not found at: $CLANG" >&2
   exit 1
 fi
 
-HOST_TAG="linux-x86_64"
-TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG"
+mkdir -p "$OUT_DIR" "$MESA_DIR/subprojects"
+
 CROSS_FILE="$OUT_DIR/android-aarch64.txt"
+cat <<EOF > "$CROSS_FILE"
+[binaries]
+c = '$CLANG'
+cpp = '$CLANGXX'
+ar = '$AR'
+ld = '$LD'
+strip = '$STRIP'
+pkgconfig = '/usr/bin/false'
 
-mkdir -p "$OUT_DIR"
-sed -e "s|@NDK_TOOLCHAIN@|$TOOLCHAIN|g" \
-    -e "s|@API@|$ANDROID_API|g" \
-    "$ROOT_DIR/cross/android-aarch64.txt.in" > "$CROSS_FILE"
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'armv8.2-a'
+endian = 'little'
+EOF
 
-export CC="$TOOLCHAIN/bin/aarch64-linux-android${ANDROID_API}-clang"
-export CXX="$TOOLCHAIN/bin/aarch64-linux-android${ANDROID_API}-clang++"
-export AR="$TOOLCHAIN/bin/llvm-ar"
-export STRIP="$TOOLCHAIN/bin/llvm-strip"
-export PATH="$TOOLCHAIN/bin:$PATH"
+# Provide libdrm for the Android aarch64 cross-build when not already present
+if [ ! -e "$MESA_DIR/subprojects/libdrm" ] && [ ! -f "$MESA_DIR/subprojects/libdrm.wrap" ]; then
+  cat <<'EOF' > "$MESA_DIR/subprojects/libdrm.wrap"
+[wrap-git]
+url = https://gitlab.freedesktop.org/mesa/drm.git
+revision = main
+depth = 1
+EOF
+fi
 
-meson setup "$OUT_DIR/meson-build" "$MESA_DIR" \
-  --cross-file "$CROSS_FILE" \
-  --buildtype=release \
+BUILD_DIR="$OUT_DIR/meson-build"
+rm -rf "$BUILD_DIR"
+
+meson setup "$BUILD_DIR" "$MESA_DIR" \
+  --cross-file="$CROSS_FILE" \
+  -Dbuildtype=release \
   -Dplatforms=android \
-  -Dplatform-sdk-version="$ANDROID_API" \
+  -Dplatform-sdk-version="$API_LEVEL" \
   -Dandroid-stub=true \
   -Dvulkan-drivers=panfrost \
   -Dgallium-drivers= \
   -Dglx=disabled \
   -Degl=disabled \
   -Dgbm=disabled \
-  -Dvulkan-icd-dir=lib/vulkan/icd.d
+  -Dvulkan-icd-dir=lib/vulkan/icd.d \
+  -Dlibdrm=enabled
 
-ninja -C "$OUT_DIR/meson-build"
+ninja -C "$BUILD_DIR"
 
-SO_PATH=$(find "$OUT_DIR/meson-build" -name "libvulkan_panfrost.so" | head -n 1)
-if [ -z "$SO_PATH" ] || [ ! -f "$SO_PATH" ]; then
-  echo "Error: libvulkan_panfrost.so was not produced." >&2
+SO_PATH="$(find "$BUILD_DIR" -name 'libvulkan_panfrost.so' -print -quit || true)"
+if [ -z "$SO_PATH" ]; then
+  echo "ERROR: libvulkan_panfrost.so was not produced in $BUILD_DIR" >&2
   exit 1
 fi
 
-cp "$SO_PATH" "$OUT_DIR/libvulkan_panfrost.so"
-"$STRIP" --strip-unneeded "$OUT_DIR/libvulkan_panfrost.so"
-echo ">>> Built driver: $OUT_DIR/libvulkan_panfrost.so"
+cp -f "$SO_PATH" "$OUT_DIR/libvulkan_panfrost.so"
+"$STRIP" --strip-unneeded "$OUT_DIR/libvulkan_panfrost.so" || true
+echo ">>> Built PanVK driver: $OUT_DIR/libvulkan_panfrost.so"
