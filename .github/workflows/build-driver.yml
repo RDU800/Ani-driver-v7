@@ -19,7 +19,7 @@ jobs:
             glslang-tools zip unzip curl git bison flex \
             llvm-20-dev clang-20 libclang-20-dev libclang-cpp20-dev \
             libclc-20-dev libllvmspirvlib-20-dev spirv-tools spirv-headers \
-            libexpat1-dev zlib1g-dev libelf-dev
+            libexpat1-dev zlib1g-dev libelf-dev libdrm-dev
           sudo apt-get remove -y meson || true
           python3 -m pip install --break-system-packages --upgrade "meson>=1.7.0" packaging mako
           meson --version
