@@ -48,7 +48,6 @@ meson setup "$DRM_BUILD" "$DRM_SRC" \
   --cross-file="$CROSS_FILE" \
   --prefix="$DRM_PREFIX" \
   -Dbuildtype=release \
-  -Dude=false \
   -Dvalgrind=disabled \
   -Dcairo-tests=disabled \
   -Dman-pages=disabled \
