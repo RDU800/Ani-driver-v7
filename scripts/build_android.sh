@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MESA_DIR="${1:-build/mesa}"
-OUT_DIR="${2:-build/out}"
+MESA_DIR="$(realpath -m "${1:-build/mesa}")"
+OUT_DIR="$(realpath -m "${2:-build/out}")"
 NDK_DIR="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-/opt/ndk/android-ndk-r28c}}"
 API_LEVEL="${ANDROID_PLATFORM_API:-29}"
 
@@ -42,7 +42,7 @@ cpu = 'armv8.2-a'
 endian = 'little'
 EOF
 
-# Build libdrm for Android aarch64 into $DRM_PREFIX so Meson finds libdrm.pc cleanly
+# Build libdrm for Android aarch64 into absolute $DRM_PREFIX so Meson finds libdrm.pc cleanly
 git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git "$DRM_SRC"
 meson setup "$DRM_BUILD" "$DRM_SRC" \
   --cross-file="$CROSS_FILE" \
