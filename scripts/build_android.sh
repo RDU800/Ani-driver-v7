@@ -18,7 +18,12 @@ if [ ! -x "$CLANG" ]; then
   exit 1
 fi
 
-mkdir -p "$OUT_DIR" "$MESA_DIR/subprojects"
+mkdir -p "$OUT_DIR"
+
+DRM_SRC="$OUT_DIR/libdrm-src"
+DRM_BUILD="$OUT_DIR/libdrm-build"
+DRM_PREFIX="$OUT_DIR/libdrm-prefix"
+rm -rf "$DRM_SRC" "$DRM_BUILD" "$DRM_PREFIX"
 
 CROSS_FILE="$OUT_DIR/android-aarch64.txt"
 cat <<EOF > "$CROSS_FILE"
@@ -28,7 +33,7 @@ cpp = '$CLANGXX'
 ar = '$AR'
 ld = '$LD'
 strip = '$STRIP'
-pkg-config = '/usr/bin/false'
+pkg-config = 'pkg-config'
 
 [host_machine]
 system = 'android'
@@ -37,15 +42,34 @@ cpu = 'armv8.2-a'
 endian = 'little'
 EOF
 
-# Provide libdrm for the Android aarch64 cross-build when not already present
-if [ ! -e "$MESA_DIR/subprojects/libdrm" ] && [ ! -f "$MESA_DIR/subprojects/libdrm.wrap" ]; then
-  cat <<'EOF' > "$MESA_DIR/subprojects/libdrm.wrap"
-[wrap-git]
-url = https://gitlab.freedesktop.org/mesa/drm.git
-revision = main
-depth = 1
-EOF
-fi
+# Build libdrm for Android aarch64 into $DRM_PREFIX so Meson finds libdrm.pc cleanly
+git clone --depth=1 https://gitlab.freedesktop.org/mesa/drm.git "$DRM_SRC"
+meson setup "$DRM_BUILD" "$DRM_SRC" \
+  --cross-file="$CROSS_FILE" \
+  --prefix="$DRM_PREFIX" \
+  -Dbuildtype=release \
+  -Dude=false \
+  -Dvalgrind=disabled \
+  -Dcairo-tests=disabled \
+  -Dman-pages=disabled \
+  -Dtests=false \
+  -Dfreedreno=disabled \
+  -Detnaviv=disabled \
+  -Dexynos=disabled \
+  -Domap=disabled \
+  -Dtegra=disabled \
+  -Dvc4=disabled \
+  -Dvmwgfx=disabled \
+  -Dradeon=false \
+  -Damdgpu=false \
+  -Dnouveau=false \
+  -Dintel=false
+ninja -C "$DRM_BUILD"
+ninja -C "$DRM_BUILD" install
+
+DRM_PC_DIRS="$(find "$DRM_PREFIX" -name 'libdrm.pc' -exec dirname {} \; | paste -sd: -)"
+export PKG_CONFIG_LIBDIR="${DRM_PC_DIRS}"
+export PKG_CONFIG_PATH="${DRM_PC_DIRS}"
 
 BUILD_DIR="$OUT_DIR/meson-build"
 rm -rf "$BUILD_DIR"
