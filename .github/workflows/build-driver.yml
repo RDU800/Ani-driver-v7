@@ -30,7 +30,7 @@ jobs:
           apt-cache policy libllvmspirvlib-21-dev
           sudo apt-get install -y \
             llvm-21-dev clang-21 libclang-21-dev libclang-cpp21-dev \
-            libclc-21-dev libllvmspirvlib-21-dev
+            libclc-21-dev 
 
           sudo apt-get remove -y meson || true
           python3 -m pip install --break-system-packages --upgrade "meson>=1.7.0" packaging mako
@@ -44,6 +44,19 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           rustc --version
 
+      - name: Build and install SPIRV-LLVM-Translator (LLVM 21)
+        run: |
+          LLVM_VER=21
+          LLVM_DIR_CMAKE="$(llvm-config-${LLVM_VER} --cmakedir)"
+          git clone --depth=1 -b llvm_release_210 https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git /tmp/SPIRV-LLVM-Translator
+          cmake -S /tmp/SPIRV-LLVM-Translator -B /tmp/SPIRV-LLVM-Translator/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DLLVM_DIR="${LLVM_DIR_CMAKE}"
+          ninja -C /tmp/SPIRV-LLVM-Translator/build -j"$(nproc)"
+          sudo ninja -C /tmp/SPIRV-LLVM-Translator/build install
+          rm -rf /tmp/SPIRV-LLVM-Translator
+          
       - name: Install bindgen-cli
         run: |
           export LIBCLANG_PATH="$(llvm-config-21 --libdir)"
