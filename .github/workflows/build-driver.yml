@@ -17,17 +17,25 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates gnupg lsb-release software-properties-common wget \
             pkg-config ninja-build python3-pip python3-mako python3-yaml python3-ply \
             glslang-tools zip unzip curl git bison flex \
-            llvm-20-dev clang-20 libclang-20-dev libclang-cpp20-dev \
-            libclc-20-dev libllvmspirvlib-20-dev spirv-tools spirv-headers \
+            spirv-tools spirv-headers \
             libexpat1-dev zlib1g-dev libelf-dev libdrm-dev
+
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 21 all
+          sudo apt-get install -y \
+            llvm-21-dev clang-21 libclang-21-dev libclang-cpp21-dev \
+            libclc-21-dev libllvmspirvlib-21-dev
+
           sudo apt-get remove -y meson || true
           python3 -m pip install --break-system-packages --upgrade "meson>=1.7.0" packaging mako
           meson --version
           pkg-config --version
-          llvm-config-20 --version
+          llvm-config-21 --version
 
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           source "$HOME/.cargo/env"
@@ -37,18 +45,18 @@ jobs:
 
       - name: Install bindgen-cli
         run: |
-         export LIBCLANG_PATH="$(llvm-config-20 --libdir)"
-         cargo install --locked bindgen-cli
-         bindgen --version
-    
-      - name: Install Android NDK r28c
+          export LIBCLANG_PATH="$(llvm-config-21 --libdir)"
+          cargo install --locked bindgen-cli
+          bindgen --version
+
+      - name: Install Android NDK r29
         run: |
           if [ -f sources.lock ]; then
             source sources.lock
           fi
-          curl -fsSL "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip" -o /tmp/ndk.zip
+          curl -fsSL "https://dl.google.com/android/repository/android-ndk-r29-linux.zip" -o /tmp/ndk.zip
           unzip -q /tmp/ndk.zip -d /opt/ndk
-          NDK_DIR="/opt/ndk/android-ndk-r28c"
+          NDK_DIR="/opt/ndk/android-ndk-r29"
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
 
@@ -77,12 +85,13 @@ jobs:
           ./build.sh "$ANDROID_NDK_HOME"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp dist/*.zip "$GITHUB_WORKSPACE/dist/"
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: ani-panvk-bifrost
           path: dist/*
-       
+
       - name: Publish GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
@@ -91,4 +100,5 @@ jobs:
           name: Ani-Driver Build #${{ github.run_number }} (${{ github.sha }})
           files: |
             dist/*.zip
-            PATCHES.md  
+            PATCHES.md
+            
