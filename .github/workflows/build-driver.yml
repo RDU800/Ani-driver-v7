@@ -124,6 +124,24 @@ jobs:
           sed -i -E 's/(\.maxUniformBufferRange[[:space:]]*=)[^,]+,/\1 65536,/' "$f"
           git diff
       
+      - name: Bundle files to review
+        run: |
+          cd build/src
+          mkdir -p ../review
+          grep -rlE "maxUniformBufferRange|PushDescriptor|push_desc|MapMemory|kbase_map" \
+            --include=*.c --include=*.h \
+            --exclude-dir=subprojects --exclude-dir=build --exclude-dir=dist . \
+            | head -40 | while read -r f; do
+                mkdir -p "../review/$(dirname "$f")"
+                cp "$f" "../review/$f"
+              done
+
+      - name: Upload review bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-files
+          path: build/review
+      
       - name: Build and package (mali-panvk build.sh)
         run: |
           cd build/src
