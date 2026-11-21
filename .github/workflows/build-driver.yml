@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -66,4 +69,13 @@ jobs:
         with:
           name: ani-panvk-bifrost
           path: dist/*
-          
+       
+      - name: Publish GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v-${{ github.run_number }}-${{ github.sha }}
+          name: Ani-Driver Build #${{ github.run_number }} (${{ github.sha }})
+          files: |
+            dist/*.zip
+            PATCHES.md  
