@@ -1,0 +1,69 @@
+diff --git a/src/panfrost/vulkan/panvk_device_memory.c b/src/panfrost/vulkan/panvk_device_memory.c
+index 5963ac0..d567b1c 100644
+--- a/src/panfrost/vulkan/panvk_device_memory.c
++++ b/src/panfrost/vulkan/panvk_device_memory.c
+@@ -331,9 +331,20 @@ panvk_MapMemory2KHR(VkDevice _device, const VkMemoryMapInfoKHR *pMemoryMapInfo,
+     *
+     *    "memory must not be currently host mapped"
+     */
+-   if (mem->addr.host)
+-      return panvk_errorf(device, VK_ERROR_MEMORY_MAP_FAILED,
+-                          "Memory object already mapped.");
++   if (mem->addr.host) {
++      /* Mapping memory that is already mapped is invalid usage, but some
++       * apps do it (the Arm driver and malisx2 hand back the existing
++       * address). The kbase layer does not reliably allow a second mmap of
++       * the same region, so reuse the first CPU mapping, which covers the
++       * whole BO, and count the extra map for the matching unmap. */
++      if (pMemoryMapInfo->flags & VK_MEMORY_MAP_PLACED_BIT_EXT)
++         return panvk_errorf(device, VK_ERROR_MEMORY_MAP_FAILED,
++                             "Memory object already mapped.");
++
++      mem->map_count++;
++      *ppData = (char *)mem->addr.host + offset;
++      return VK_SUCCESS;
++   }
+ 
+    void *host_addr = NULL;
+    int map_flags = MAP_SHARED;
+@@ -355,6 +366,7 @@ panvk_MapMemory2KHR(VkDevice _device, const VkMemoryMapInfoKHR *pMemoryMapInfo,
+ 
+    assert(!host_addr || addr == host_addr);
+    mem->addr.host = addr;
++   mem->map_count = 1;
+    *ppData = (char *)addr + offset;
+ 
+    return VK_SUCCESS;
+@@ -367,6 +379,17 @@ panvk_UnmapMemory2KHR(VkDevice _device,
+    VK_FROM_HANDLE(panvk_device, device, _device);
+    VK_FROM_HANDLE(panvk_device_memory, mem, pMemoryUnmapInfo->memory);
+ 
++   /* Unmapping memory that is not mapped does nothing. */
++   if (!mem->addr.host)
++      return VK_SUCCESS;
++
++   /* Keep the CPU mapping until the last of a nested set of maps goes away. */
++   if (mem->map_count > 1) {
++      mem->map_count--;
++      return VK_SUCCESS;
++   }
++   mem->map_count = 0;
++
+    if (pMemoryUnmapInfo->flags & VK_MEMORY_UNMAP_RESERVE_BIT_EXT) {
+       void *reserved =
+          os_mmap(mem->addr.host, pan_kmod_bo_size(mem->bo), PROT_NONE,
+diff --git a/src/panfrost/vulkan/panvk_device_memory.h b/src/panfrost/vulkan/panvk_device_memory.h
+index 6fc545b..2e5c18c 100644
+--- a/src/panfrost/vulkan/panvk_device_memory.h
++++ b/src/panfrost/vulkan/panvk_device_memory.h
+@@ -20,6 +20,10 @@ struct panvk_device_memory {
+       void *host;
+    } addr;
+ 
++   /* How many vkMapMemory calls are outstanding on this memory. The CPU
++    * mapping is created by the first one and removed by the last unmap. */
++   uint32_t map_count;
++
+    struct {
+       /* Don't use this pointer, it's only to have user memory dumped when
+        * PANVK_DEBUG=dump. */

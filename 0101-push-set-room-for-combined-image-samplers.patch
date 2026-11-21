@@ -1,0 +1,52 @@
+diff --git a/src/panfrost/vulkan/panvk_cmd_desc_state.h b/src/panfrost/vulkan/panvk_cmd_desc_state.h
+index e747ef6..47bc9fe 100644
+--- a/src/panfrost/vulkan/panvk_cmd_desc_state.h
++++ b/src/panfrost/vulkan/panvk_cmd_desc_state.h
+@@ -55,10 +55,17 @@ panvk_shader_res_table_count(struct panvk_shader_desc_state *shader_desc_state)
+ }
+ #endif
+ 
++/* maxPushDescriptors counts API descriptors, but a combined image sampler
++ * takes a texture and a sampler slot (panvk_get_desc_stride()), so a full
++ * push set needs twice as many opaque descriptors as MAX_PUSH_DESCS. With only
++ * MAX_PUSH_DESCS slots, pushing MAX_PUSH_DESCS combined image samplers wrote
++ * past the end of the push set. */
++#define MAX_PUSH_DESC_SLOTS (MAX_PUSH_DESCS * 2)
++
+ struct panvk_push_set {
+    struct panvk_cmd_pool_obj base;
+    struct panvk_descriptor_set set;
+-   struct panvk_opaque_desc descs[MAX_PUSH_DESCS];
++   struct panvk_opaque_desc descs[MAX_PUSH_DESC_SLOTS];
+ };
+ 
+ struct panvk_descriptor_state {
+diff --git a/src/panfrost/vulkan/panvk_vX_cmd_desc_state.c b/src/panfrost/vulkan/panvk_vX_cmd_desc_state.c
+index 8204f5e..939ddb0 100644
+--- a/src/panfrost/vulkan/panvk_vX_cmd_desc_state.c
++++ b/src/panfrost/vulkan/panvk_vX_cmd_desc_state.c
+@@ -467,6 +467,11 @@ push_desc_set_write(struct panvk_cmd_buffer *cmd,
+    const struct panvk_descriptor_set_layout *set_layout =
+       to_panvk_descriptor_set_layout(playout->set_layouts[info->set]);
+ 
++   if (set_layout->desc_count > MAX_PUSH_DESC_SLOTS) {
++      vk_command_buffer_set_error(&cmd->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
++      return;
++   }
++
+    struct panvk_descriptor_set *push_set =
+       cmd_get_push_desc_set(&cmd->vk, desc, info->set);
+    if (!push_set)
+@@ -520,6 +525,12 @@ panvk_per_arch(CmdPushDescriptorSetWithTemplate2KHR)(
+       to_panvk_descriptor_set_layout(playout->set_layouts[set]);
+    struct panvk_descriptor_state *desc_state =
+       panvk_cmd_get_desc_state(cmdbuf, template->bind_point);
++
++   if (set_layout->desc_count > MAX_PUSH_DESC_SLOTS) {
++      vk_command_buffer_set_error(&cmdbuf->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
++      return;
++   }
++
+    struct panvk_descriptor_set *push_set =
+       cmd_get_push_desc_set(&cmdbuf->vk, desc_state, set);
+    if (!push_set)

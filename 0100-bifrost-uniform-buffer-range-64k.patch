@@ -1,0 +1,19 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index e789b80..68b20bb 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -922,8 +922,13 @@ panvk_per_arch(get_physical_device_properties)(
+       .maxTexelBufferElements = UINT64_C(1) << (util_logbase2(panvk_get_max_buffer_size(device) / 16)),
+       /* Each uniform entry is 16-byte and the number of entries is encoded in a
+        * 12-bit field, with the minus(1) modifier, which gives 2^20.
++       *
++       * Measured on a Mali-G52 (v7): a uniform buffer binding larger than
++       * 64 KiB reads back as zero past that point (the last element of a
++       * 1 MiB block), and the Arm driver on the same GPU reports 64 KiB. Keep
++       * Bifrost at 64 KiB.
+        */
+-      .maxUniformBufferRange = 1 << 20,
++      .maxUniformBufferRange = PAN_ARCH < 9 ? (1 << 16) : (1 << 20),
+       /* Storage buffer access is lowered to globals, so there's no limit here,
+        * except for the SW-descriptor we use to encode storage buffer
+        * descriptors, where the size is a 32-bit field.
