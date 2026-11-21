@@ -22,7 +22,12 @@ for layer in "$PATCH_ROOT"/*; do
   for patch in "$layer"/*.patch; do
     [ -f "$patch" ] || continue
     echo ">>> Applying $(basename "$layer")/$(basename "$patch")"
-    git am --3way "$patch"
+        if head -n1 "$patch" | grep -q '^From '; then
+      git am --3way "$patch"
+    else
+      git apply --3way "$patch"
+      git commit -q -m "$(basename "$layer")/$(basename "$patch")"
+    fi
     applied=$((applied + 1))
     entry="$(basename "$layer")/$(basename "$patch")"
     applied_list="${applied_list:+$applied_list, }$entry"
