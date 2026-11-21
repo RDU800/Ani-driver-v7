@@ -104,8 +104,11 @@ jobs:
           cd build/src
           ./build.sh "$ANDROID_NDK_HOME"
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cp dist/*.zip "$GITHUB_WORKSPACE/dist/ani-panvk-build-${{ github.run_number }}.zip"
-
+          T=$(mktemp -d)
+          unzip -q dist/*.zip -d "$T"
+          sed -i -E 's/"name": *"[^"]*"/"name": "ani-panvk-build-${{ github.run_number }}"/; s/"packageVersion": *"[^"]*"/"packageVersion": "${{ github.run_number }}"/' "$T/meta.json"
+          (cd "$T" && zip -qr "$GITHUB_WORKSPACE/dist/ani-panvk-build-${{ github.run_number }}.zip" .)
+     
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
