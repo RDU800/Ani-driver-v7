@@ -27,6 +27,7 @@ jobs:
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh 21 all
+          apt-cache policy libllvmspirvlib-21-dev
           sudo apt-get install -y \
             llvm-21-dev clang-21 libclang-21-dev libclang-cpp21-dev \
             libclc-21-dev libllvmspirvlib-21-dev
