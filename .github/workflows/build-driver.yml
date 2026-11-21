@@ -52,18 +52,31 @@ jobs:
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
 
-      - name: Fetch pinned Mesa source
-        run: bash scripts/fetch_mesa.sh build/mesa
+      - name: Fetch mali-panvk source
+        uses: actions/checkout@v4
+        with:
+          repository: JimVulkan/mali-panvk
+          ref: main
+          path: build/src
 
-      - name: Apply patch layers
-        run: bash scripts/apply_patches.sh build/mesa
+      - name: Apply patches
+        run: |
+          echo "mali-panvk $(cat build/src/VERSION) @ $(git -C build/src rev-parse --short HEAD)"
+          printf "# Applied Patches\n\nBase: JimVulkan/mali-panvk @ %s\n\n" \
+            "$(git -C build/src rev-parse --short HEAD)" > PATCHES.md
+          for p in patches-jv/*.patch; do
+            [ -f "$p" ] || continue
+            echo ">>> $p"
+            git -C build/src apply --3way "$GITHUB_WORKSPACE/$p"
+            echo "- $(basename "$p")" >> PATCHES.md
+          done
 
-      - name: Cross-compile PanVK for Android aarch64
-        run: bash scripts/build_android.sh build/mesa build/out
-
-      - name: Package driver zip
-        run: bash scripts/package_adreno_tools.sh build/out dist
-
+      - name: Build and package (mali-panvk build.sh)
+        run: |
+          cd build/src
+          ./build.sh "$ANDROID_NDK_HOME"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp dist/*.zip "$GITHUB_WORKSPACE/dist/"
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
