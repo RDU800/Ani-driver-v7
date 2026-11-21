@@ -2,5 +2,5 @@ MESA_REPO=https://gitlab.freedesktop.org/mesa/mesa.git
 MESA_REF=main
 DRIVER_NAME=ani-panvk
 DRIVER_VERSION=0.1.0-alpha
-NDK_VERSION=28.2.13676358
+NDK_VERSION=29.0.14206865
 ANDROID_API=29
