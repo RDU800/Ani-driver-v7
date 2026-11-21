@@ -9,6 +9,17 @@ DIST_DIR="$(realpath -m "${2:-$ROOT_DIR/dist}")"
 
 # shellcheck disable=SC1090
 source "$ROOT_DIR/sources.lock"
+# Fall back to the actual checked-out Mesa commit if sources.lock doesn't set it
+if [ -z "${MESA_COMMIT:-}" ]; then
+  MESA_COMMIT="${MESA_SHA:-${MESA_REF:-${MESA_REV:-}}}"
+fi
+if [ -z "${MESA_COMMIT:-}" ] && [ -d "$ROOT_DIR/build/mesa/.git" ]; then
+  MESA_COMMIT="$(git -C "$ROOT_DIR/build/mesa" rev-parse HEAD 2>/dev/null || true)"
+fi
+MESA_COMMIT="${MESA_COMMIT:-unknown}"
+
+DRIVER_NAME="${DRIVER_NAME:-ani-driver}"
+DRIVER_VERSION="${DRIVER_VERSION:-1}"
 
 LIB_NAME="libvulkan_panfrost.so"
 STAGE_DIR="$OUT_DIR/package"
