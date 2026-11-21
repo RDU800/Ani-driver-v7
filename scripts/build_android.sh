@@ -222,6 +222,6 @@ meson setup "$MESA_BUILD_DIR" "$SRC_DIR" \
   "${EXTRA_OPTS[@]}"
 
 ninja -C "$MESA_BUILD_DIR" -j"$(nproc)"
-DESTDIR="$OUT_DIR" ninja -C "$MESA_BUILD_DIR" install
+DESTDIR="$(realpath -m "$OUT_DIR")" ninja -C "$MESA_BUILD_DIR" install
 
 echo "Build complete. Staged output at: $OUT_DIR"
