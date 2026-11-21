@@ -18,7 +18,7 @@ MESA_BUILD_DIR="${MESA_BUILD_DIR:-$ROOT_DIR/build/android-arm64}"
 CROSS_FILE="${CROSS_FILE:-$ROOT_DIR/cross-android-arm64.txt}"
 PKG_CROSS_FILE="$ROOT_DIR/build/cross-pkgconfig.txt"
 
-NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-/opt/ndk/android-ndk-r28c}}}"
+NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-/opt/ndk/android-ndk-r29}}}"
 API_LEVEL="${API_LEVEL:-29}"
 
 if [[ ! -d "$SRC_DIR" ]]; then
@@ -138,7 +138,7 @@ has_opt "$MESA_OPT_FILE" precomp-compiler       && HOST_OPTS+=(-Dprecomp-compile
 has_opt "$MESA_OPT_FILE" install-precomp-compiler && HOST_OPTS+=(-Dinstall-precomp-compiler=true)
 
 if [[ ${#HOST_OPTS[@]} -gt 0 ]]; then
-  LLVM_VER="${LLVM_VER:-20}"
+  LLVM_VER="${LLVM_VER:-21}"
   LLVM_CONFIG_BIN="/usr/bin/llvm-config-${LLVM_VER}"
   CLANG_BIN="/usr/bin/clang-${LLVM_VER}"
   if [[ ! -x "$LLVM_CONFIG_BIN" ]]; then
