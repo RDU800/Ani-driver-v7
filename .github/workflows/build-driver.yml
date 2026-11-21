@@ -93,18 +93,6 @@ jobs:
             echo "- $(basename "$p")" >> PATCHES.md
           done
       
-      - name: Trial fix - uniform buffer range 64 KiB
-        run: |
-          cd build/src
-          grep -rn "maxUniformBufferRange" --include=*.c --include=*.h \
-            --exclude-dir=subprojects --exclude-dir=build . | head
-          f=$(grep -rlE "\.maxUniformBufferRange[[:space:]]*=" \
-            --include=*.c --include=*.h --exclude-dir=subprojects \
-            --exclude-dir=build . | head -n1)
-          [ -n "$f" ] || { echo "No match: send me the grep output above"; exit 1; }
-          sed -i -E 's/(\.maxUniformBufferRange[[:space:]]*=)[^,]+,/\1 65536,/' "$f"
-          git diff
-      
       - name: Upload review bundle
         uses: actions/upload-artifact@v4
         with:
