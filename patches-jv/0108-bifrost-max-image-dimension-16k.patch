@@ -1,0 +1,20 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index e6b70e3..29732b5 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -917,10 +917,11 @@ panvk_per_arch(get_physical_device_properties)(
+ 
+       /* Vulkan 1.0 limits */
+       /* Maximum texture dimension is 2^16. */
+-      .maxImageDimension1D = (1 << 16),
+-      .maxImageDimension2D = (1 << 16),
+-      .maxImageDimension3D = (1 << 16),
+-      .maxImageDimensionCube = (1 << 16),
++      /* The Arm driver on a Mali-G52 reports 16384 for all four. */
++      .maxImageDimension1D = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
++      .maxImageDimension2D = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
++      .maxImageDimension3D = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
++      .maxImageDimensionCube = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
+       .maxImageArrayLayers = (1 << 16),
+       .maxTexelBufferElements = UINT64_C(1) << (util_logbase2(panvk_get_max_buffer_size(device) / 16)),
+       /* Each uniform entry is 16-byte and the number of entries is encoded in a
