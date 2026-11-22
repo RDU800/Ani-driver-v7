@@ -1,0 +1,61 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+index 4b939a0..e6c0b79 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+@@ -405,10 +405,20 @@ panvk_draw_prepare_fs_rsd(struct panvk_cmd_buffer *cmdbuf,
+                ? PAN_EARLYZS_ZS_TILEBUF_READ_NO_OPT
+                : PAN_EARLYZS_ZS_TILEBUF_NOT_READ;
+ 
++         /* VK_EXT_rasterization_order_attachment_access: the shader may read
++          * what earlier primitives wrote to the attachment, so pixels must not
++          * be killed by a later one (forward pixel kill) and the depth and
++          * stencil buffers are read in order. Same handling as v9 and CSF. */
++         const bool roa_color =
++            dyns->rasterization_order_access & VK_IMAGE_ASPECT_COLOR_BIT;
++         if (dyns->rasterization_order_access &
++             (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
++            zs_read = PAN_EARLYZS_ZS_TILEBUF_READ_NO_OPT;
++
+          cfg.properties.allow_forward_pixel_to_kill =
+             fs_info->fs.can_fpk && !(rt_mask & ~rt_written) &&
+             !(rt_read & rt_written) && !alpha_to_coverage &&
+-            !binfo->any_dest_read;
++            !binfo->any_dest_read && !roa_color;
+ 
+          bool writes_zs = writes_z || writes_s;
+          bool zs_always_passes = ds_test_always_passes(cmdbuf);
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index 68b20bb..85ebe96 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -211,7 +211,7 @@ panvk_per_arch(get_physical_device_extensions)(
+       .EXT_primitive_topology_list_restart = true,
+       .EXT_provoking_vertex = true,
+       .EXT_queue_family_foreign = true,
+-      .EXT_rasterization_order_attachment_access = PAN_ARCH >= 10,
++      .EXT_rasterization_order_attachment_access = PAN_ARCH <= 7 || PAN_ARCH >= 10,
+       .EXT_rgba10x6_formats = PAN_ARCH >= 11,
+       .EXT_robustness2 = PAN_ARCH <= 7 || PAN_ARCH >= 9,
+       .EXT_sampler_filter_minmax = PAN_ARCH >= 10,
+@@ -259,7 +259,7 @@ panvk_per_arch(get_physical_device_extensions)(
+       .ARM_shader_core_builtins = true,
+       .ARM_shader_core_properties = true,
+       .ARM_scheduling_controls = true,
+-      .ARM_rasterization_order_attachment_access = PAN_ARCH >= 10,
++      .ARM_rasterization_order_attachment_access = PAN_ARCH <= 7 || PAN_ARCH >= 10,
+    };
+ }
+ 
+@@ -833,9 +833,9 @@ panvk_per_arch(get_physical_device_features)(
+ #endif
+ 
+       /* VK_EXT_rasterization_order_attachment_access */
+-      .rasterizationOrderColorAttachmentAccess = PAN_ARCH >= 10,
+-      .rasterizationOrderDepthAttachmentAccess = PAN_ARCH >= 10,
+-      .rasterizationOrderStencilAttachmentAccess = PAN_ARCH >= 10,
++      .rasterizationOrderColorAttachmentAccess = PAN_ARCH <= 7 || PAN_ARCH >= 10,
++      .rasterizationOrderDepthAttachmentAccess = PAN_ARCH <= 7 || PAN_ARCH >= 10,
++      .rasterizationOrderStencilAttachmentAccess = PAN_ARCH <= 7 || PAN_ARCH >= 10,
+ 
+       /* VK_ANDROID_external_format_resolve */
+       .externalFormatResolve = has_gralloc && PAN_ARCH >= 10,
