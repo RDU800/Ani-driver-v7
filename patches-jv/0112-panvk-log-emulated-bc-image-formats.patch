@@ -1,0 +1,41 @@
+diff --git a/src/panfrost/vulkan/panvk_image.c b/src/panfrost/vulkan/panvk_image.c
+index 00c5e97..ad3edc6 100644
+--- a/src/panfrost/vulkan/panvk_image.c
++++ b/src/panfrost/vulkan/panvk_image.c
+@@ -15,6 +15,8 @@
+ #include "pan_afbc.h"
+ #include "pan_props.h"
+ 
++#include "util/log.h"
++
+ #include "panvk_android.h"
+ #include "panvk_bc_emu.h"
+ #include "panvk_device.h"
+@@ -816,6 +818,27 @@ panvk_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+                                   (pCreateInfo->usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
+                                   panvk_bc_emu_format(phys_dev, image->vk.format);
+ 
++   /* Diagnostics: log the first image created in each emulated BC format. */
++   if (panvk_bc_emu_format(phys_dev, image->vk.format)) {
++      static uint64_t panvk_bc_logged;
++      const uint32_t fmt = (uint32_t)image->vk.format - VK_FORMAT_BC1_RGB_UNORM_BLOCK;
++      if (fmt < 64) {
++         const uint64_t bit = 1ull << fmt;
++         uint64_t old = p_atomic_read(&panvk_bc_logged);
++         while (!(old & bit)) {
++            const uint64_t prev = p_atomic_cmpxchg(&panvk_bc_logged, old, old | bit);
++            if (prev == old) {
++               mesa_logi("panvk: BC emulated image format %u (%ux%u, %u mips, %u layers)",
++                         (unsigned)image->vk.format, pCreateInfo->extent.width,
++                         pCreateInfo->extent.height, pCreateInfo->mipLevels,
++                         pCreateInfo->arrayLayers);
++               break;
++            }
++            old = prev;
++         }
++      }
++   }
++
+    uint64_t size = panvk_image_get_total_size(image);
+ 
+    /*

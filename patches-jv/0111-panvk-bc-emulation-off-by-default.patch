@@ -1,0 +1,17 @@
+diff --git a/src/panfrost/vulkan/panvk_bc_emu.c b/src/panfrost/vulkan/panvk_bc_emu.c
+index a900dc2..b1cbb59 100644
+--- a/src/panfrost/vulkan/panvk_bc_emu.c
++++ b/src/panfrost/vulkan/panvk_bc_emu.c
+@@ -74,7 +74,11 @@ static const uint32_t bc_emu_eac_r_3d_spv[] = {
+ /* Keeps the vk_meta cache keys apart from vk_meta's and panvk's own. */
+ #define PANVK_BC_EMU_META_KEY (VK_META_OBJECT_KEY_DRIVER_OFFSET + 0x4243u)
+ 
+-DEBUG_GET_ONCE_BOOL_OPTION(no_bc_emu, "PANVK_NO_BC_EMU", false)
++/* Experiment (Mali-G52): Vita3K draws a character with blocky, striped textures on this driver
++ * and cleanly on the Arm driver. Vita3K picks its texture path from textureCompressionBC, which is
++ * true here because of this emulation and false on the Arm driver. Default to no emulation;
++ * PANVK_NO_BC_EMU=0 turns it back on. */
++DEBUG_GET_ONCE_BOOL_OPTION(no_bc_emu, "PANVK_NO_BC_EMU", true)
+ 
+ /* TEXTURE_FEATURES_0 bits, the compressed format ids of the v6/v7 genxml: EAC R11 UNORM 2,
+  * EAC RG11 UNORM 4, BC1..BC3 7..9, BC4_UNORM..BC7 10..16, ASTC 2D LDR 22. */
