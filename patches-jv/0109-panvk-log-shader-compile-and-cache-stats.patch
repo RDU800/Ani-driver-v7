@@ -1,0 +1,63 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index 06b60c1..29e39ce 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -23,7 +23,10 @@
+ 
+ #include "spirv/nir_spirv.h"
+ #include "util/memstream.h"
++#include "util/log.h"
+ #include "util/mesa-blake3.h"
++#include "util/os_time.h"
++#include "util/u_atomic.h"
+ #include "util/shader_stats.h"
+ #include "util/u_debug.h"
+ #include "util/u_dynarray.h"
+@@ -3011,6 +3014,11 @@ panvk_per_arch(compiler_unlock)(void)
+       simple_mtx_unlock(&compiler_mutex);
+ }
+ 
++/* Diagnostics: how many shaders this process compiled, and how long that took. A launch that
++ * finds everything in the disk cache compiles none. */
++static uint64_t panvk_stat_compiled;
++static uint64_t panvk_stat_compile_ns;
++
+ static VkResult
+ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+                       struct vk_shader_compile_info *infos,
+@@ -3019,6 +3027,8 @@ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+                       const VkAllocationCallbacks *pAllocator,
+                       struct vk_shader **shaders_out)
+ {
++   const int64_t t0 = os_time_get_nano();
++
+    panvk_per_arch(compiler_lock)();
+ 
+    VkResult result = compile_shaders(vk_dev, shader_count, infos, state,
+@@ -3027,6 +3037,13 @@ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+ 
+    panvk_per_arch(compiler_unlock)();
+ 
++   const uint64_t dt = (uint64_t)(os_time_get_nano() - t0);
++   const uint64_t n = p_atomic_add_return(&panvk_stat_compiled, shader_count);
++   const uint64_t total = p_atomic_add_return(&panvk_stat_compile_ns, dt);
++   mesa_logi("panvk: compiled %u shader(s) in %.1f ms (total %llu compiled, %.0f ms)",
++             shader_count, (double)dt / 1e6, (unsigned long long)n,
++             (double)total / 1e6);
++
+    return result;
+ }
+ 
+@@ -3208,6 +3225,12 @@ panvk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+    struct panvk_shader *shader;
+    VkResult result;
+ 
++   /* Diagnostics: shaders loaded from the pipeline or disk cache instead of compiled. */
++   static uint64_t panvk_stat_cache_hits;
++   const uint64_t hits = p_atomic_inc_return(&panvk_stat_cache_hits);
++   if (hits % 25 == 1)
++      mesa_logi("panvk: shader loaded from cache (#%llu)", (unsigned long long)hits);
++
+    mesa_shader_stage stage = blob_read_uint8(blob);
+    if (blob->overrun)
+       return vk_error(device, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);

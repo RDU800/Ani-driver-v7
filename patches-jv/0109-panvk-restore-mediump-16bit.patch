@@ -1,0 +1,30 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index e214353..06b60c1 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -457,12 +457,8 @@ panvk_get_nir_options(UNUSED struct vk_physical_device *vk_pdev,
+ 
+ /* RelaxedPrecision runs in 16 bits: ALU, texture results and fragment colour outputs, as the
+  * vendor driver does (Mali-G57: a mediump textured fill shader runs 20% faster there, and not at
+- * all faster here before this). PANVK_NO_MEDIUMP=1 keeps everything 32-bit.
+- *
+- * Experiment (Mali-G52): the Vita emulator draws a character with blocky, striped textures on this
+- * driver and cleanly on the Arm driver. Default to 32-bit everywhere; PANVK_NO_MEDIUMP=0 turns
+- * 16-bit RelaxedPrecision back on. */
+-DEBUG_GET_ONCE_BOOL_OPTION(panvk_no_mediump, "PANVK_NO_MEDIUMP", true)
++ * all faster here before this). PANVK_NO_MEDIUMP=1 keeps everything 32-bit. */
++DEBUG_GET_ONCE_BOOL_OPTION(panvk_no_mediump, "PANVK_NO_MEDIUMP", false)
+ 
+ static bool
+ panvk_mediump_16bit(void)
+@@ -1226,9 +1222,7 @@ panvk_lower_nir_io(nir_shader *nir)
+     */
+    NIR_PASS(_, nir, nir_opt_constant_folding);
+ 
+-   /* RelaxedPrecision varyings travel as fp16 when this lowering runs. */
+-   if (panvk_mediump_16bit())
+-      pan_nir_lower_mediump_io(nir);
++   pan_nir_lower_mediump_io(nir);
+ 
+    /* RelaxedPrecision colour outputs reach the blend unit in 16 bits; the blend descriptor
+     * follows the type (fs_info->bifrost.blend[].type). Before pan_nir_lower_fs_outputs. */
