@@ -1,0 +1,86 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_buffer.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_buffer.c
+index 90a82f8..19855b2 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_buffer.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_buffer.c
+@@ -37,6 +37,7 @@
+ #include "util/os_time.h"
+ #include "util/u_atomic.h"
+ #include "vk_descriptor_update_template.h"
++#include "vk_log.h"
+ #include "vk_format.h"
+ 
+ static VkResult
+@@ -107,7 +108,7 @@ static uint64_t panvk_stat_barrier_splits;
+ static int64_t panvk_stat_last_ns;
+ 
+ static void
+-panvk_stats_tick(void)
++panvk_stats_tick(VkDevice device)
+ {
+    const int64_t now = os_time_get_nano();
+    const int64_t last = p_atomic_read(&panvk_stat_last_ns);
+@@ -127,6 +128,10 @@ panvk_stats_tick(void)
+    mesa_logi("panvk: last %.1f s: %llu batches, %llu barriers (%llu split a batch)",
+              (double)(now - last) / 1e9, (unsigned long long)batches,
+              (unsigned long long)barriers, (unsigned long long)splits);
++   vk_logw(VK_LOG_OBJS(device),
++           "panvk: last %.1f s: %llu batches, %llu barriers (%llu split a batch)",
++           (double)(now - last) / 1e9, (unsigned long long)batches,
++           (unsigned long long)barriers, (unsigned long long)splits);
+ }
+ 
+ void
+@@ -536,7 +541,7 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
+       panvk_per_arch(cmd_close_batch)(cmdbuf);
+       panvk_per_arch(cmd_open_batch)(cmdbuf);
+    }
+-   panvk_stats_tick();
++   panvk_stats_tick(vk_device_to_handle(cmdbuf->vk.base.device));
+ }
+ 
+ static void
+diff --git a/src/panfrost/vulkan/panvk_image.c b/src/panfrost/vulkan/panvk_image.c
+index ad3edc6..5b8f44c 100644
+--- a/src/panfrost/vulkan/panvk_image.c
++++ b/src/panfrost/vulkan/panvk_image.c
+@@ -832,6 +832,11 @@ panvk_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+                          (unsigned)image->vk.format, pCreateInfo->extent.width,
+                          pCreateInfo->extent.height, pCreateInfo->mipLevels,
+                          pCreateInfo->arrayLayers);
++               vk_logw(VK_LOG_OBJS(device),
++                       "panvk: BC emulated image format %u (%ux%u, %u mips, %u layers)",
++                       (unsigned)image->vk.format, pCreateInfo->extent.width,
++                       pCreateInfo->extent.height, pCreateInfo->mipLevels,
++                       pCreateInfo->arrayLayers);
+                break;
+             }
+             old = prev;
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index 29e39ce..68547a5 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -3043,6 +3043,11 @@ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+    mesa_logi("panvk: compiled %u shader(s) in %.1f ms (total %llu compiled, %.0f ms)",
+              shader_count, (double)dt / 1e6, (unsigned long long)n,
+              (double)total / 1e6);
++   /* Also through the Vulkan debug messenger, which emulators write to their own log. */
++   vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)),
++           "panvk: compiled %u shader(s) in %.1f ms (total %llu compiled, %.0f ms)",
++           shader_count, (double)dt / 1e6, (unsigned long long)n,
++           (double)total / 1e6);
+ 
+    return result;
+ }
+@@ -3228,8 +3233,11 @@ panvk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+    /* Diagnostics: shaders loaded from the pipeline or disk cache instead of compiled. */
+    static uint64_t panvk_stat_cache_hits;
+    const uint64_t hits = p_atomic_inc_return(&panvk_stat_cache_hits);
+-   if (hits % 25 == 1)
++   if (hits % 25 == 1) {
+       mesa_logi("panvk: shader loaded from cache (#%llu)", (unsigned long long)hits);
++      vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)),
++              "panvk: shader loaded from cache (#%llu)", (unsigned long long)hits);
++   }
+ 
+    mesa_shader_stage stage = blob_read_uint8(blob);
+    if (blob->overrun)
