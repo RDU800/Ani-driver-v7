@@ -1,0 +1,27 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index 85ebe96..2230235 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -47,7 +47,7 @@ panvk_per_arch(get_physical_device_extensions)(
+    *ext = (struct vk_device_extension_table){
+       .KHR_8bit_storage = true,
+       .KHR_16bit_storage = true,
+-      .KHR_shader_atomic_int64 = PAN_ARCH >= 9,
++      .KHR_shader_atomic_int64 = PAN_ARCH >= 7,
+       .KHR_bind_memory2 = true,
+       .KHR_buffer_device_address = true,
+       .KHR_calibrated_timestamps =
+@@ -424,8 +424,11 @@ panvk_per_arch(get_physical_device_features)(
+       .storageBuffer8BitAccess = true,
+       .uniformAndStorageBuffer8BitAccess = true,
+       .storagePushConstant8 = true,
+-      .shaderBufferInt64Atomics = PAN_ARCH >= 9,
+-      .shaderSharedInt64Atomics = PAN_ARCH >= 9,
++      /* The Bifrost compiler emits 64-bit ATOM/AXCHG/ACMPXCHG (with the
++       * ATOM_POST fix-up on v6-v8) for global and shared memory, and the Arm
++       * driver on a Mali-G52 passes shaderBufferInt64Atomics. */
++      .shaderBufferInt64Atomics = PAN_ARCH >= 7,
++      .shaderSharedInt64Atomics = PAN_ARCH >= 7,
+       .shaderFloat16 = PAN_ARCH >= 10,
+       .shaderInt8 = true,
+       /* In theory, update-after-bind is supported on bifrost, but the

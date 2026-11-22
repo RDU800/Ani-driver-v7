@@ -1,0 +1,16 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index 2230235..f190a47 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -429,7 +429,10 @@ panvk_per_arch(get_physical_device_features)(
+        * driver on a Mali-G52 passes shaderBufferInt64Atomics. */
+       .shaderBufferInt64Atomics = PAN_ARCH >= 7,
+       .shaderSharedInt64Atomics = PAN_ARCH >= 7,
+-      .shaderFloat16 = PAN_ARCH >= 10,
++      /* 16-bit storage and 16-bit ALU already work on Bifrost (the compiler
++       * uses fp16 for mediump), and Bifrost has native fp16 arithmetic. The
++       * Arm driver on a Mali-G52 offers shaderFloat16. */
++      .shaderFloat16 = PAN_ARCH >= 7,
+       .shaderInt8 = true,
+       /* In theory, update-after-bind is supported on bifrost, but the
+        * descriptor limits would be too low for the descriptorIndexing feature.
