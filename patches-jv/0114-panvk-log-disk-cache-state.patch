@@ -1,0 +1,57 @@
+diff --git a/src/panfrost/vulkan/panvk_physical_device.c b/src/panfrost/vulkan/panvk_physical_device.c
+index 273a9f7..8723d65 100644
+--- a/src/panfrost/vulkan/panvk_physical_device.c
++++ b/src/panfrost/vulkan/panvk_physical_device.c
+@@ -152,6 +152,9 @@ get_drm_device_ids(struct panvk_physical_device *device,
+    return VK_SUCCESS;
+ }
+ 
++/* Diagnostics: how the disk cache directory was chosen, read by the shader compile log. */
++char panvk_disk_cache_info[600] = "ENABLE_SHADER_CACHE or Android disk cache not built in";
++
+ #if defined(ENABLE_SHADER_CACHE) && DETECT_OS_ANDROID
+ /* Upstream keeps the disk shader cache off on Android, and apps have no HOME, so every launch
+  * recompiled every pipeline (the app's and our BC decoders). Give the cache an app-private
+@@ -179,6 +182,13 @@ panvk_android_disk_cache_dir(void)
+       }
+    }
+ 
++   Dl_info where;
++   const char *so = (dladdr((void *)panvk_android_disk_cache_dir, &where) && where.dli_fname)
++                       ? where.dli_fname : "(unknown)";
++   snprintf(panvk_disk_cache_info, sizeof(panvk_disk_cache_info),
++            "cache dir '%s' (TMPDIR '%s', driver library '%s')", dir[0] ? dir : "(none)",
++            t ? t : "(unset)", so);
++
+    disk_cache_set_default_dir(dir[0] ? dir : NULL);
+ }
+ #endif
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index 68547a5..3cd4813 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -3019,6 +3019,8 @@ panvk_per_arch(compiler_unlock)(void)
+ static uint64_t panvk_stat_compiled;
+ static uint64_t panvk_stat_compile_ns;
+ 
++extern char panvk_disk_cache_info[600];
++
+ static VkResult
+ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+                       struct vk_shader_compile_info *infos,
+@@ -3037,6 +3039,15 @@ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+ 
+    panvk_per_arch(compiler_unlock)();
+ 
++   /* Once per process: whether the disk cache exists, and where it lives. */
++   static uint32_t panvk_cache_logged;
++   if (p_atomic_cmpxchg(&panvk_cache_logged, 0, 1) == 0) {
++      vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)), "panvk: disk shader cache %s; %s",
++              vk_dev->physical->disk_cache ? "ON" : "OFF", panvk_disk_cache_info);
++      mesa_logi("panvk: disk shader cache %s; %s", vk_dev->physical->disk_cache ? "ON" : "OFF",
++                panvk_disk_cache_info);
++   }
++
+    const uint64_t dt = (uint64_t)(os_time_get_nano() - t0);
+    const uint64_t n = p_atomic_add_return(&panvk_stat_compiled, shader_count);
+    const uint64_t total = p_atomic_add_return(&panvk_stat_compile_ns, dt);
