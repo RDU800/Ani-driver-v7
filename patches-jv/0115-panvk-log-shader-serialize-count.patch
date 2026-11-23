@@ -1,0 +1,19 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index 3cd4813..54464ea 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -3391,6 +3391,14 @@ panvk_shader_serialize(struct vk_device *vk_dev,
+       panvk_shader_serialize_variant(vk_dev, variant, blob);
+    }
+ 
++   /* Diagnostics: the runtime serializes a shader to put it in a pipeline or disk cache. */
++   static uint64_t panvk_stat_serialized;
++   const uint64_t sn = p_atomic_inc_return(&panvk_stat_serialized);
++   if (sn % 25 == 1)
++      vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)),
++              "panvk: shader serialized for a cache (#%llu, %llu bytes)",
++              (unsigned long long)sn, (unsigned long long)blob->size);
++
+    return !blob->out_of_memory;
+ }
+ 
