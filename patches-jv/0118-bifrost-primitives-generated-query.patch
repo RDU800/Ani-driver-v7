@@ -1,0 +1,117 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
+index c4237f0..ff7c37c 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
+@@ -189,6 +189,15 @@ panvk_per_arch(CmdBeginQueryIndexedEXT)(VkCommandBuffer commandBuffer,
+       return;
+    }
+ 
++   /* Primitives generated are counted on the CPU like pipeline statistics (panvk_cmd_query.h). */
++   if (pool->vk.query_type == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
++      struct panvk_pipeline_stats_state *st = &cmd->state.gfx.stats;
++      st->pg_owns_active = !st->active;
++      st->active = true;
++      st->pg_base = st->counts[6];
++      return;
++   }
++
+    /* Pipeline statistics are counted on the CPU and written at the end. */
+    if (pool->vk.query_type == VK_QUERY_TYPE_PIPELINE_STATISTICS) {
+       memset(&cmd->state.gfx.stats, 0, sizeof(cmd->state.gfx.stats));
+@@ -275,6 +284,17 @@ panvk_per_arch(CmdEndQueryIndexedEXT)(VkCommandBuffer commandBuffer,
+       gfx_state_set_dirty(cmd, OQ);
+       break;
+    }
++   case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT: {
++      struct panvk_pipeline_stats_state *st = &cmd->state.gfx.stats;
++      panvk_emit_write_job(cmd, batch, MALI_WRITE_VALUE_TYPE_IMMEDIATE_64,
++                           panvk_query_report_dev_addr(pool, query),
++                           st->counts[6] - st->pg_base);
++      if (st->pg_owns_active) {
++         st->active = false;
++         st->pg_owns_active = false;
++      }
++      break;
++   }
+    case VK_QUERY_TYPE_PIPELINE_STATISTICS: {
+       uint64_t report = panvk_query_report_dev_addr(pool, query);
+       u_foreach_bit(s, pool->vk.pipeline_statistics) {
+@@ -311,7 +331,10 @@ panvk_meta_copy_query_pool_results(struct panvk_cmd_buffer *cmd,
+       .query_count = query_count,
+       .dst_addr = dst_addr,
+       .dst_stride = dst_stride,
+-      .query_type = pool->vk.query_type,
++      /* The copy kernel knows no primitives generated type; one 64-bit value plus availability
++       * is the same layout as a timestamp. */
++      .query_type = pool->vk.query_type == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT
++                       ? VK_QUERY_TYPE_TIMESTAMP : pool->vk.query_type,
+       .flags = flags,
+       .report_count = pool->reports_per_query,
+    };
+diff --git a/src/panfrost/vulkan/panvk_cmd_query.h b/src/panfrost/vulkan/panvk_cmd_query.h
+index 8145449..ef65d91 100644
+--- a/src/panfrost/vulkan/panvk_cmd_query.h
++++ b/src/panfrost/vulkan/panvk_cmd_query.h
+@@ -30,6 +30,13 @@ struct panvk_occlusion_query_state {
+ struct panvk_pipeline_stats_state {
+    bool active;
+    uint64_t counts[PANVK_PIPELINE_STAT_COUNT];
++
++   /* A VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT query on JM reuses the CPU counting above: it turns
++    * counting on if no pipeline statistics query did, and reports the growth of counts[6]
++    * (clipping primitives) between begin and end. Direct draws only; a geometry shader's real
++    * output count is not known on the CPU. */
++   bool pg_owns_active;
++   uint64_t pg_base;
+ };
+ 
+ #if PAN_ARCH >= 10
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index d74f94f..a9a0a5d 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -209,6 +209,7 @@ panvk_per_arch(get_physical_device_extensions)(
+ #endif
+       .EXT_private_data = true,
+       .EXT_primitive_topology_list_restart = true,
++      .EXT_primitives_generated_query = PAN_ARCH <= 7,
+       .EXT_provoking_vertex = true,
+       .EXT_queue_family_foreign = true,
+       .EXT_rasterization_order_attachment_access = PAN_ARCH <= 7 || PAN_ARCH >= 10,
+@@ -661,6 +662,9 @@ panvk_per_arch(get_physical_device_features)(
+       .transformFeedback = true,
+       .geometryStreams = true,
+ 
++      /* VK_EXT_primitives_generated_query: counted on the CPU from direct draws (v6/v7). */
++      .primitivesGeneratedQuery = PAN_ARCH <= 7,
++
+       /* VK_EXT_primitive_topology_list_restart */
+       .primitiveTopologyListRestart = true,
+       .primitiveTopologyPatchListRestart = false,
+diff --git a/src/panfrost/vulkan/panvk_vX_query_pool.c b/src/panfrost/vulkan/panvk_vX_query_pool.c
+index d43d465..3cee681 100644
+--- a/src/panfrost/vulkan/panvk_vX_query_pool.c
++++ b/src/panfrost/vulkan/panvk_vX_query_pool.c
+@@ -76,6 +76,10 @@ panvk_per_arch(CreateQueryPool)(VkDevice _device,
+       /* One WRITE_VALUE SYSTEM_TIMESTAMP (jm/panvk_vX_cmd_query.c). */
+       reports_per_query = 1;
+       break;
++   case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT:
++      /* One CPU-counted value, written by jm/panvk_vX_cmd_query.c. */
++      reports_per_query = 1;
++      break;
+ #endif
+    case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
+       /* Primitives written, primitives needed (panlib_xfb_query_end on JM, zeros on CSF,
+@@ -314,6 +318,11 @@ panvk_per_arch(GetQueryPoolResults)(VkDevice _device, VkQueryPool queryPool,
+                cpu_write_query_result(dst, 0, flags, src[0].value);
+             break;
+          }
++         case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT: {
++            if (write_results)
++               cpu_write_query_result(dst, 0, flags, src[0].value);
++            break;
++         }
+ #endif
+          case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT: {
+             if (write_results) {
