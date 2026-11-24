@@ -1,0 +1,25 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_shader.c b/src/panfrost/vulkan/panvk_vX_shader.c
+index 54464ea..347aac7 100644
+--- a/src/panfrost/vulkan/panvk_vX_shader.c
++++ b/src/panfrost/vulkan/panvk_vX_shader.c
+@@ -3039,9 +3039,17 @@ panvk_compile_shaders(struct vk_device *vk_dev, uint32_t shader_count,
+ 
+    panvk_per_arch(compiler_unlock)();
+ 
+-   /* Once per process: whether the disk cache exists, and where it lives. */
+-   static uint32_t panvk_cache_logged;
+-   if (p_atomic_cmpxchg(&panvk_cache_logged, 0, 1) == 0) {
++   /* Once per device: whether the disk cache exists, where it lives, and the identity that goes
++    * into a saved pipeline cache header (an app rejects its cache when these change). */
++   static struct vk_device *panvk_cache_logged_dev;
++   if (p_atomic_xchg(&panvk_cache_logged_dev, vk_dev) != vk_dev) {
++      const struct vk_properties *p = &vk_dev->physical->properties;
++      const uint8_t *u = p->pipelineCacheUUID;
++      vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)),
++              "panvk: cache identity vendor 0x%x device 0x%x driverVersion 0x%x uuid "
++              "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
++              p->vendorID, p->deviceID, p->driverVersion, u[0], u[1], u[2], u[3], u[4], u[5],
++              u[6], u[7], u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]);
+       vk_logw(VK_LOG_OBJS(vk_device_to_handle(vk_dev)), "panvk: disk shader cache %s; %s",
+               vk_dev->physical->disk_cache ? "ON" : "OFF", panvk_disk_cache_info);
+       mesa_logi("panvk: disk shader cache %s; %s", vk_dev->physical->disk_cache ? "ON" : "OFF",
