@@ -1,0 +1,25 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -220,6 +220,9 @@ panvk_per_arch(get_physical_device_extensions)(
+       .EXT_scalar_block_layout = true,
+       .EXT_separate_stencil_usage = true,
+       .EXT_shader_demote_to_helper_invocation = true,
++      /* Experiment (Mali-G52): tile-based architecture naturally supports on-tile
++       * color/depth/stencil reads as exposed by the Arm stock driver. */
++      .EXT_shader_tile_image = true,
+       .EXT_shader_viewport_index_layer = PAN_ARCH >= 9,
+       .EXT_subgroup_size_control = true,
+       .EXT_texel_buffer_alignment = true,
+@@ -680,6 +683,11 @@ panvk_per_arch(get_physical_device_features)(
+       /* VK_EXT_shader_demote_to_helper_invocation */
+       .shaderDemoteToHelperInvocation = true,
+ 
++      /* VK_EXT_shader_tile_image */
++      .shaderTileImageColorReadAccess = true,
++      .shaderTileImageDepthReadAccess = true,
++      .shaderTileImageStencilReadAccess = true,
++
+       /* VK_EXT_subgroup_size_control */
+       .subgroupSizeControl = true,
+       .computeFullSubgroups = true,
