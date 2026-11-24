@@ -1,0 +1,9 @@
+--- a/src/panvk/vulkan/panvk_physical_device.c
++++ b/src/panvk/vulkan/panvk_physical_device.c
+@@ -XXX,XX +XXX,XX @@ panvk_get_physical_device_features_1_4(struct panvk_physical_device *pdevice,
+                                        VkPhysicalDeviceVulkan14Features *features)
+ {
++   /* Test hypothesis #1: isolate Dynamic Rendering local read missing-lights/500ms behavior */
++   features->dynamicRenderingLocalRead = false;
+ }
+ 
