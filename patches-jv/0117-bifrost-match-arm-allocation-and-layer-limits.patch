@@ -1,0 +1,25 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index 29732b5..d74f94f 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -922,7 +922,8 @@ panvk_per_arch(get_physical_device_properties)(
+       .maxImageDimension2D = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
+       .maxImageDimension3D = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
+       .maxImageDimensionCube = PAN_ARCH < 9 ? (1 << 14) : (1 << 16),
+-      .maxImageArrayLayers = (1 << 16),
++      /* The Arm driver on a Mali-G52 reports 4096. */
++      .maxImageArrayLayers = PAN_ARCH < 9 ? 4096 : (1 << 16),
+       .maxTexelBufferElements = UINT64_C(1) << (util_logbase2(panvk_get_max_buffer_size(device) / 16)),
+       /* Each uniform entry is 16-byte and the number of entries is encoded in a
+        * 12-bit field, with the minus(1) modifier, which gives 2^20.
+@@ -951,7 +952,9 @@ panvk_per_arch(get_physical_device_properties)(
+        * VK_ERROR_OUT_OF_DEVICE_MEMORY when applicable, rather than
+        * this limit.
+        */
+-      .maxMemoryAllocationCount = UINT32_MAX,
++      /* The Arm driver on a Mali-G52 reports 16384; apps that sub-allocate respect it and make fewer
++       * kernel allocations. */
++      .maxMemoryAllocationCount = PAN_ARCH < 9 ? 16384 : UINT32_MAX,
+       /* On Mali, VkSampler objects do not use any resources other than host
+        * memory and host address space, availability of which can change
+        * significantly over time.
