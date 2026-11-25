@@ -1,0 +1,110 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_gpu_queue.c b/src/panfrost/vulkan/jm/panvk_vX_gpu_queue.c
+index cbafd7b..9b8779a 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_gpu_queue.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_gpu_queue.c
+@@ -37,6 +37,11 @@
+ #include "panvk_bc_emu.h"
+ #include "util/u_sync_provider.h"
+ 
++#include "util/log.h"
++#include "util/os_time.h"
++#include "util/simple_mtx.h"
++#include "vk_log.h"
++
+ static void panvk_signal_event_syncobjs(struct panvk_gpu_queue *queue,
+                                         struct panvk_batch *batch);
+ 
+@@ -97,12 +102,74 @@ panvk_kbase_report_faults(struct panvk_device *dev, struct panvk_cmd_buffer *con
+    }
+ }
+ 
++/* Diagnostics: how much of the time a submission is in flight, and how long each takes from the
++ * submit call to the last atom reporting. Near 100% busy with a long latency means the GPU is the
++ * limit; a low busy share means the CPU side (the app, the emulator or this driver) is. Logged
++ * about once a second. */
++static struct {
++   simple_mtx_t lock;
++   uint32_t inflight;
++   int64_t last_ns, busy_ns, window_ns;
++   uint64_t submits, latency_ns, max_latency_ns;
++} panvk_gpu_stats = {.lock = SIMPLE_MTX_INITIALIZER};
++
++static void
++panvk_gpu_stats_submit(void)
++{
++   const int64_t now = os_time_get_nano();
++   simple_mtx_lock(&panvk_gpu_stats.lock);
++   if (!panvk_gpu_stats.window_ns)
++      panvk_gpu_stats.window_ns = panvk_gpu_stats.last_ns = now;
++   if (panvk_gpu_stats.inflight)
++      panvk_gpu_stats.busy_ns += now - panvk_gpu_stats.last_ns;
++   panvk_gpu_stats.last_ns = now;
++   panvk_gpu_stats.inflight++;
++   panvk_gpu_stats.submits++;
++   simple_mtx_unlock(&panvk_gpu_stats.lock);
++}
++
++static void
++panvk_gpu_stats_done(struct panvk_device *dev, int64_t t_submit)
++{
++   const int64_t now = os_time_get_nano();
++   simple_mtx_lock(&panvk_gpu_stats.lock);
++   if (panvk_gpu_stats.inflight) {
++      panvk_gpu_stats.busy_ns += now - panvk_gpu_stats.last_ns;
++      panvk_gpu_stats.inflight--;
++   }
++   panvk_gpu_stats.last_ns = now;
++   const uint64_t latency = (uint64_t)(now - t_submit);
++   panvk_gpu_stats.latency_ns += latency;
++   panvk_gpu_stats.max_latency_ns = MAX2(panvk_gpu_stats.max_latency_ns, latency);
++
++   const int64_t elapsed = now - panvk_gpu_stats.window_ns;
++   if (elapsed < 1000000000ll) {
++      simple_mtx_unlock(&panvk_gpu_stats.lock);
++      return;
++   }
++   const double busy = 100.0 * (double)panvk_gpu_stats.busy_ns / (double)elapsed;
++   const uint64_t submits = panvk_gpu_stats.submits;
++   const double avg_ms = submits ? (double)panvk_gpu_stats.latency_ns / (double)submits / 1e6 : 0;
++   const double max_ms = (double)panvk_gpu_stats.max_latency_ns / 1e6;
++   panvk_gpu_stats.window_ns = now;
++   panvk_gpu_stats.busy_ns = 0;
++   panvk_gpu_stats.submits = panvk_gpu_stats.latency_ns = panvk_gpu_stats.max_latency_ns = 0;
++   simple_mtx_unlock(&panvk_gpu_stats.lock);
++
++   mesa_logi("panvk: gpu %.1f s: %llu submits, %.0f%% busy, latency avg %.1f ms max %.1f ms",
++             (double)elapsed / 1e9, (unsigned long long)submits, busy, avg_ms, max_ms);
++   vk_logw(VK_LOG_OBJS(vk_device_to_handle(&dev->vk)),
++           "panvk: gpu %.1f s: %llu submits, %.0f%% busy, latency avg %.1f ms max %.1f ms",
++           (double)elapsed / 1e9, (unsigned long long)submits, busy, avg_ms, max_ms);
++}
++
+ /* What a kbase submission still has to do once the GPU is done with it. */
+ struct panvk_kbase_done {
+    struct panvk_gpu_queue *queue;
+    uint32_t nr_cmdbufs, nr_signals;
+    struct panvk_cmd_buffer **cmdbufs;
+    uint32_t *signals;
++   int64_t t_submit;
+ };
+ 
+ /* On the kmod's event thread, when every atom of the submission has reported. The command
+@@ -113,6 +180,8 @@ panvk_kbase_submit_done(void *data, bool ok)
+    struct panvk_kbase_done *d = data;
+    struct panvk_device *dev = to_panvk_device(d->queue->vk.base.device);
+ 
++   panvk_gpu_stats_done(dev, d->t_submit);
++
+    if (!ok) {
+       mesa_loge("panvk: the kbase submission did not complete");
+       panvk_kbase_report_faults(dev, d->cmdbufs, d->nr_cmdbufs);
+@@ -271,6 +340,9 @@ panvk_queue_submit_kbase_chain(struct panvk_gpu_queue *queue, struct vk_queue_su
+    /* Before submitting: the completion may run before submit_async even returns. */
+    pan_kmod_kbase_sync_submitted(signals, nr_signals);
+ 
++   d->t_submit = os_time_get_nano();
++   panvk_gpu_stats_submit();
++
+    int fence = -1;
+    const uint64_t seq = pan_kmod_kbase_submit_async(
+       dev->kmod.dev, atoms, nr_atoms, nr_signals ? &fence : NULL, panvk_kbase_submit_done, d);

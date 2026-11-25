@@ -1,0 +1,23 @@
+diff --git a/src/panfrost/vulkan/panvk_physical_device.c b/src/panfrost/vulkan/panvk_physical_device.c
+index 8723d65..7c1536e 100644
+--- a/src/panfrost/vulkan/panvk_physical_device.c
++++ b/src/panfrost/vulkan/panvk_physical_device.c
+@@ -17,6 +17,7 @@
+ 
+ #if DETECT_OS_ANDROID
+ #include <dlfcn.h>
++#include <stdlib.h>
+ #include <unistd.h>
+ #endif
+ 
+@@ -189,6 +190,10 @@ panvk_android_disk_cache_dir(void)
+             "cache dir '%s' (TMPDIR '%s', driver library '%s')", dir[0] ? dir : "(none)",
+             t ? t : "(unset)", so);
+ 
++   /* Every build has its own cache identity, so a build leaves entries nothing will read again.
++    * Cap the cache; the oldest entries go first. MESA_SHADER_CACHE_MAX_SIZE overrides this. */
++   setenv("MESA_SHADER_CACHE_MAX_SIZE", "256M", 0);
++
+    disk_cache_set_default_dir(dir[0] ? dir : NULL);
+ }
+ #endif

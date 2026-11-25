@@ -1,0 +1,49 @@
+diff --git a/src/panfrost/compiler/bifrost/bifrost_compile.c b/src/panfrost/compiler/bifrost/bifrost_compile.c
+index b23b8ec..cc1c258 100644
+--- a/src/panfrost/compiler/bifrost/bifrost_compile.c
++++ b/src/panfrost/compiler/bifrost/bifrost_compile.c
+@@ -1249,9 +1249,16 @@ bi_emit_atomic_i64_to(bi_builder *b, bi_index dst, bi_index addr, bi_index arg,
+                       nir_atomic_op op)
+ {
+    enum bi_atom_opc opc = bi_atom_opc_for_nir(op);
+-   enum bi_atom_opc post_opc = opc;
+    bool bifrost = b->shader->arch <= 8;
+ 
++   /* Experiment (Mali-G52): a 64-bit atomic add built with the plain aadd opcode, which the 64-bit
++    * table shares with the 32-bit one, added only the high word of the operand and lost the low
++    * word (FauxVKTest atomic.int64_buffer). The Bifrost 64-bit table has its own unsigned and
++    * signed adds, aaddu and aadds; use the unsigned one. */
++   if (bifrost && opc == BI_ATOM_OPC_AADD)
++      opc = BI_ATOM_OPC_AADDU;
++   enum bi_atom_opc post_opc = opc;
++
+    /* ATOM_C.i64 takes a vector with {arg, coalesced}, ATOM_C1.i64 doesn't
+     * take any vector but can still output in RETURN mode */
+    bi_index tmp_dest = bifrost ? bi_temp(b->shader) : dst;
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index da5317c..f1e9b30 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -47,7 +47,7 @@ panvk_per_arch(get_physical_device_extensions)(
+    *ext = (struct vk_device_extension_table){
+       .KHR_8bit_storage = true,
+       .KHR_16bit_storage = true,
+-      .KHR_shader_atomic_int64 = PAN_ARCH >= 9,
++      .KHR_shader_atomic_int64 = PAN_ARCH >= 7,
+       .KHR_bind_memory2 = true,
+       .KHR_buffer_device_address = true,
+       .KHR_calibrated_timestamps =
+@@ -427,8 +427,11 @@ panvk_per_arch(get_physical_device_features)(
+       .storageBuffer8BitAccess = true,
+       .uniformAndStorageBuffer8BitAccess = true,
+       .storagePushConstant8 = true,
+-      .shaderBufferInt64Atomics = PAN_ARCH >= 9,
+-      .shaderSharedInt64Atomics = PAN_ARCH >= 9,
++      /* 64-bit atomics on Bifrost: the stock Arm driver passes shaderBufferInt64Atomics on a
++       * Mali-G52. With the plain add opcode FauxVKTest atomic.int64_buffer failed; the compiler
++       * experiment in this patch uses the unsigned add variant. */
++      .shaderBufferInt64Atomics = PAN_ARCH >= 7,
++      .shaderSharedInt64Atomics = PAN_ARCH >= 7,
+       /* 16-bit storage and 16-bit ALU already work on Bifrost (the compiler
+        * uses fp16 for mediump), and Bifrost has native fp16 arithmetic. The
+        * Arm driver on a Mali-G52 offers shaderFloat16. */
