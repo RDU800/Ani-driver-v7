@@ -1,0 +1,17 @@
+diff --git a/src/panfrost/lib/pan_fb.c b/src/panfrost/lib/pan_fb.c
+index 063e0f5..dca08ee 100644
+--- a/src/panfrost/lib/pan_fb.c
++++ b/src/panfrost/lib/pan_fb.c
+@@ -51,6 +51,12 @@ GENX(pan_select_fb_tile_size)(struct pan_fb_layout *fb)
+       MIN2(fb->tile_rt_budget_B >> util_logbase2_ceil(rt_B_per_px),
+            fb->tile_z_budget_B >> util_logbase2_ceil(z_B_per_px));
+ 
++   /* Experiment (Mali-G52): the HDR and Dynamic Rendering local reads Vulkan examples, whose render
++    * targets take 16 bytes or more per pixel, draw wrongly. Halve the tile for such framebuffers to
++    * see whether tile memory pressure is the cause. */
++   if (rt_B_per_px >= 16 && fb->tile_size_px >= 2 * 4 * 4)
++      fb->tile_size_px >>= 1;
++
+    /* Check if we're using too much tile-memory; if we are, try disabling
+     * pipelining. This works because we're starting with an optimistic half
+     * of the tile-budget, so we actually have another half that can be used.

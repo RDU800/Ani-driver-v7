@@ -1,0 +1,58 @@
+diff --git a/src/panfrost/vulkan/panvk_vX_cmd_draw.c b/src/panfrost/vulkan/panvk_vX_cmd_draw.c
+index f32bbd6..d8a493c 100644
+--- a/src/panfrost/vulkan/panvk_vX_cmd_draw.c
++++ b/src/panfrost/vulkan/panvk_vX_cmd_draw.c
+@@ -15,7 +15,12 @@
+ #include "pan_util.h"
+ #include "poly/geometry.h"
+ 
++#include "util/format/u_format.h"
++#include "util/log.h"
++#include "util/u_atomic.h"
++
+ #include "vk_android.h"
++#include "vk_log.h"
+ #include "vk_render_pass.h"
+ 
+ static enum pan_fb_load_op
+@@ -765,6 +770,40 @@ panvk_per_arch(cmd_select_tile_size)(struct panvk_cmd_buffer *cmdbuf)
+ 
+       GENX(pan_select_fb_tile_size)(fb);
+ 
++      /* Diagnostics: log each distinct framebuffer configuration once (render target formats,
++       * samples, tile size and tile memory), to compare a working and a broken scene. */
++      {
++         uint32_t h = fb->rt_count * 131u + fb->sample_count * 17u + fb->tile_size_px;
++         for (unsigned i = 0; i < fb->rt_count; i++)
++            h = h * 31u + (uint32_t)fb->rt_formats[i];
++
++         static uint32_t panvk_fb_seen[32];
++         static uint32_t panvk_fb_nseen;
++         bool found = false;
++         const uint32_t n = MIN2(p_atomic_read(&panvk_fb_nseen), 32);
++         for (uint32_t i = 0; i < n; i++)
++            found |= p_atomic_read(&panvk_fb_seen[i]) == h;
++
++         if (!found && n < 32) {
++            panvk_fb_seen[p_atomic_inc_return(&panvk_fb_nseen) - 1] = h;
++
++            char fmts[200] = "";
++            size_t len = 0;
++            for (unsigned i = 0; i < fb->rt_count && i < 8 && len < sizeof(fmts) - 32; i++)
++               len += snprintf(fmts + len, sizeof(fmts) - len, "%s%s", i ? " " : "",
++                               fb->rt_formats[i] == PIPE_FORMAT_NONE
++                                  ? "none" : util_format_short_name(fb->rt_formats[i]));
++
++            mesa_logi("panvk: framebuffer %u RT [%s], %u samples, tile %u px, rt alloc %u B (budget %u B)",
++                      fb->rt_count, fmts, fb->sample_count, fb->tile_size_px,
++                      fb->tile_rt_alloc_B, fb->tile_rt_budget_B);
++            vk_logw(VK_LOG_OBJS(&cmdbuf->vk.base),
++                    "panvk: framebuffer %u RT [%s], %u samples, tile %u px, rt alloc %u B (budget %u B)",
++                    fb->rt_count, fmts, fb->sample_count, fb->tile_size_px,
++                    fb->tile_rt_alloc_B, fb->tile_rt_budget_B);
++         }
++      }
++
+ #if PAN_ARCH != 6
+       if (fb->tile_rt_alloc_B > fb->tile_rt_budget_B) {
+          vk_perf(VK_LOG_OBJS(&cmdbuf->vk.base),
