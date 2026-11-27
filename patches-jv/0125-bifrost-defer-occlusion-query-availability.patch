@@ -1,0 +1,98 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_cmd_buffer.h b/src/panfrost/vulkan/jm/panvk_cmd_buffer.h
+index 2cbe7ba..c6e2521 100644
+--- a/src/panfrost/vulkan/jm/panvk_cmd_buffer.h
++++ b/src/panfrost/vulkan/jm/panvk_cmd_buffer.h
+@@ -232,6 +232,10 @@ struct panvk_batch *
+ 
+ void panvk_per_arch(cmd_close_batch)(struct panvk_cmd_buffer *cmdbuf);
+ 
++#if PAN_ARCH <= 7
++void panvk_per_arch(cmd_flush_deferred_oq)(struct panvk_cmd_buffer *cmdbuf);
++#endif
++
+ #if PAN_ARCH < 9
+ void panvk_per_arch(cmd_flush_pending_tilers)(struct panvk_cmd_buffer *cmdbuf,
+                                               unsigned keep);
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+index e6c0b79..1b000bc 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+@@ -3358,6 +3358,7 @@ panvk_per_arch(CmdEndRendering2KHR)(
+ 
+       panvk_per_arch(cmd_close_batch)(cmdbuf);
+       cmdbuf->cur_batch = NULL;
++      panvk_per_arch(cmd_flush_deferred_oq)(cmdbuf);
+       panvk_per_arch(cmd_meta_resolve_attachments)(cmdbuf);
+    }
+ }
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
+index ff7c37c..7858359 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_query.c
+@@ -250,6 +250,22 @@ panvk_per_arch(CmdEndQueryIndexedEXT)(VkCommandBuffer commandBuffer,
+    const bool xfb = pool->vk.query_type == VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT;
+    assert(xfb || index == 0);
+ 
++#if PAN_ARCH <= 7
++   /* An occlusion query ends inside a render pass, and its count is added by the fragment job.
++    * Closing the batch here to order the availability write after that job splits the pass: a
++    * framebuffer store and reload for every query (about 200 us each at 1280x720, FauxVKTest
++    * perf.occlusion_query_in_pass_cost). Set the availability once the pass ends instead. */
++   struct panvk_occlusion_query_state *oq = &cmd->state.gfx.occlusion_query;
++   if (pool->vk.query_type == VK_QUERY_TYPE_OCCLUSION && cmd->cur_batch &&
++       oq->pending_count < ARRAY_SIZE(oq->pending_avail)) {
++      oq->ptr = 0;
++      oq->mode = MALI_OCCLUSION_MODE_DISABLED;
++      gfx_state_set_dirty(cmd, OQ);
++      oq->pending_avail[oq->pending_count++] = panvk_query_available_dev_addr(pool, query);
++      return;
++   }
++#endif
++
+    bool end_sync = cmd->cur_batch != NULL;
+ 
+    /* Close to ensure we are sync and flush caches */
+@@ -316,6 +332,26 @@ panvk_per_arch(CmdEndQueryIndexedEXT)(VkCommandBuffer commandBuffer,
+    close_batch(cmd, had_batch);
+ }
+ 
++#if PAN_ARCH <= 7
++/* Called once a render pass has ended: the fragment jobs have been submitted, so the availability
++ * writes of the occlusion queries that ended inside it go in a batch after them. */
++void
++panvk_per_arch(cmd_flush_deferred_oq)(struct panvk_cmd_buffer *cmd)
++{
++   struct panvk_occlusion_query_state *oq = &cmd->state.gfx.occlusion_query;
++   if (!oq->pending_count)
++      return;
++
++   bool had_batch;
++   struct panvk_batch *batch = open_batch(cmd, &had_batch);
++   for (uint32_t i = 0; i < oq->pending_count; i++)
++      panvk_emit_write_job(cmd, batch, MALI_WRITE_VALUE_TYPE_IMMEDIATE_32, oq->pending_avail[i], 1);
++   oq->pending_count = 0;
++
++   close_batch(cmd, had_batch);
++}
++#endif
++
+ static void
+ panvk_meta_copy_query_pool_results(struct panvk_cmd_buffer *cmd,
+                                    struct panvk_query_pool *pool,
+diff --git a/src/panfrost/vulkan/panvk_cmd_query.h b/src/panfrost/vulkan/panvk_cmd_query.h
+index ef65d91..e088b67 100644
+--- a/src/panfrost/vulkan/panvk_cmd_query.h
++++ b/src/panfrost/vulkan/panvk_cmd_query.h
+@@ -18,6 +18,12 @@ struct panvk_occlusion_query_state {
+ #endif
+    uint64_t ptr;
+    enum mali_occlusion_mode mode;
++#if PAN_ARCH <= 7
++   /* Availability addresses of occlusion queries that ended inside the render pass. They are set
++    * once the pass ends (cmd_flush_deferred_oq), so ending a query does not split the pass. */
++   uint64_t pending_avail[128];
++   uint32_t pending_count;
++#endif
+ };
+ 
+ /* VK_QUERY_TYPE_PIPELINE_STATISTICS. Mali has no pipeline counters, so the counts are derived
