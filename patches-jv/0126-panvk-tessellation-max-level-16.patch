@@ -1,0 +1,97 @@
+diff --git a/src/panfrost/vulkan/jm/panvk_v9_cmd_draw.c b/src/panfrost/vulkan/jm/panvk_v9_cmd_draw.c
+index afbb70d..44e07a2 100644
+--- a/src/panfrost/vulkan/jm/panvk_v9_cmd_draw.c
++++ b/src/panfrost/vulkan/jm/panvk_v9_cmd_draw.c
+@@ -1781,7 +1781,8 @@ tess_draw(struct panvk_cmd_buffer *cmdbuf, const struct panvk_draw_info *draw)
+     * triangles. */
+    const uint32_t cap =
+       indirect ? PANVK_TESS_MAX_INDICES
+-               : MIN2((uint64_t)nr_patches * 64 * 64 * 6, PANVK_TESS_MAX_INDICES);
++               : MIN2((uint64_t)nr_patches * PANVK_TESS_MAX_LEVEL * PANVK_TESS_MAX_LEVEL * 6,
++                   PANVK_TESS_MAX_INDICES);
+ 
+    enum tess_primitive_mode prim;
+    enum gl_tess_spacing spacing;
+diff --git a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+index 1b000bc..c271625 100644
+--- a/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
++++ b/src/panfrost/vulkan/jm/panvk_vX_cmd_draw.c
+@@ -134,8 +134,9 @@ gs_prims_per_instance(const struct panvk_draw_data *draw,
+    }
+ }
+ 
+-/* Tessellation: the patches a draw has, and the indices its tess eval job is sized for. 64 is
+- * maxTessellationGenerationLevel, where a quad domain is 64x64 quads of two triangles. */
++/* Tessellation: the patches a draw has, and the indices its tess eval job is sized for.
++ * PANVK_TESS_MAX_LEVEL is maxTessellationGenerationLevel, where a quad domain is level x level
++ * quads of two triangles. */
+ static uint32_t
+ tess_patches(const struct panvk_cmd_buffer *cmdbuf, const struct panvk_draw_data *draw)
+ {
+@@ -149,7 +150,7 @@ tess_index_cap(const struct panvk_cmd_buffer *cmdbuf, const struct panvk_draw_da
+    /* An indirect draw's patch count is only on the GPU. */
+    if (draw->info.indirect.buffer_dev_addr)
+       return PANVK_TESS_MAX_INDICES;
+-   const uint64_t n = (uint64_t)tess_patches(cmdbuf, draw) * 64 * 64 * 6;
++   const uint64_t n = (uint64_t)tess_patches(cmdbuf, draw) * PANVK_TESS_MAX_LEVEL * PANVK_TESS_MAX_LEVEL * 6;
+    return MIN2(n, PANVK_TESS_MAX_INDICES);
+ }
+ 
+diff --git a/src/panfrost/vulkan/panvk_gs.h b/src/panfrost/vulkan/panvk_gs.h
+index 7f99998..6b6ab48 100644
+--- a/src/panfrost/vulkan/panvk_gs.h
++++ b/src/panfrost/vulkan/panvk_gs.h
+@@ -203,6 +203,11 @@ bool panvk_nir_lower_gs(struct nir_shader *nir, const struct panvk_gs_lower_opti
+ #define PANVK_TESS_HEAP_SIZE    (64u << 20)
+ #define PANVK_TESS_MAX_INDICES  (1u << 18)
+ 
++/* The highest tessellation level, in maxTessellationGenerationLevel. Each patch of a draw is sized
++ * for a quad domain at this level (level x level quads of two triangles), so the buffers and the
++ * tess eval job of a draw grow with its square. src/poly/cl/tessellator.h clamps to the same. */
++#define PANVK_TESS_MAX_LEVEL    16
++
+ /* The tessellator's grid for an indirect draw, whose patch count only the GPU knows: each thread
+  * walks the patches at this stride. */
+ #define PANVK_TESS_INDIRECT_GRID 1024
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index f1e9b30..f71812c 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -1004,7 +1004,8 @@ panvk_per_arch(get_physical_device_properties)(
+       /* 32 vec4 varyings. */
+       .maxVertexOutputComponents = 128,
+       /* Tessellation is emulated (panvk_nir_lower_gs.c); these are the spec minimums. */
+-      .maxTessellationGenerationLevel = 64,
++      /* Below the Vulkan minimum of 64, on purpose: see PANVK_TESS_MAX_LEVEL in panvk_gs.h. */
++      .maxTessellationGenerationLevel = 16,
+       .maxTessellationPatchSize = 32,
+       .maxTessellationControlPerVertexInputComponents = 64,
+       .maxTessellationControlPerVertexOutputComponents = 64,
+diff --git a/src/poly/cl/tessellator.h b/src/poly/cl/tessellator.h
+index 06d0377..4aaa060 100644
+--- a/src/poly/cl/tessellator.h
++++ b/src/poly/cl/tessellator.h
+@@ -31,7 +31,10 @@
+ #pragma once
+ 
+ #define POLY_TESS_MIN_ISOLINE_DENSITY_TESSELLATION_FACTOR 1.0f
+-#define POLY_TESS_MAX_ISOLINE_DENSITY_TESSELLATION_FACTOR 64.0f
++/* Experiment (Mali-G52 / PanVK): the driver sizes every tessellated draw for the largest level, so
++ * its cost and its memory grow with the square of it. The levels are clamped to 16 here, in
++ * PANVK_TESS_MAX_LEVEL (panvk_gs.h) and in maxTessellationGenerationLevel; keep them together. */
++#define POLY_TESS_MAX_ISOLINE_DENSITY_TESSELLATION_FACTOR 16.0f
+ 
+ typedef unsigned int FXP; // fixed point number
+ 
+@@ -205,9 +208,9 @@ poly_heap_alloc_points(constant struct poly_tess_params *p, uint patch,
+ // amar.patel@microsoft.com
+ 
+ #define POLY_TESS_MIN_ODD_TESSELLATION_FACTOR  1
+-#define POLY_TESS_MAX_ODD_TESSELLATION_FACTOR  63
++#define POLY_TESS_MAX_ODD_TESSELLATION_FACTOR  15
+ #define POLY_TESS_MIN_EVEN_TESSELLATION_FACTOR 2
+-#define POLY_TESS_MAX_EVEN_TESSELLATION_FACTOR 64
++#define POLY_TESS_MAX_EVEN_TESSELLATION_FACTOR 16
+ 
+ // 2^(-16), min positive fixed point fraction
+ #define EPSILON 0.0000152587890625f
